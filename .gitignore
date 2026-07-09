@@ -1,0 +1,27 @@
+# IDEs and OS files
+.idea/
+.vscode/
+desktop.ini
+*.iml
+
+# Root build artifacts
+eazzio reminder.aab
+eazzio reminder.apk
+*.aab
+*.apk
+
+# Backend files
+backend/node_modules/
+backend/.env
+backend/database.db
+
+# Frontend patterns
+**/node_modules/
+**/.dart_tool/
+**/.flutter-plugins-dependencies
+**/.pub-cache/
+**/.pub/
+**/build/
+**/android/app/debug
+**/android/app/profile
+**/android/app/release
