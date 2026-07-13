@@ -223,17 +223,17 @@ app.delete('/api/reminders/:id', async (req, res) => {
 
 // Log in or register user
 app.post('/api/auth/login', async (req, res) => {
-  const { identifier, password, name, email, phone } = req.body;
+  const { email, password, name } = req.body;
   
   // 1. Password credentials sign-in
-  if (identifier && password) {
+  if (email && password) {
     try {
       const user = await dbQuery.get(
-        'SELECT * FROM users WHERE email = ? OR phone = ?',
-        [identifier.trim().toLowerCase(), identifier.trim()]
+        'SELECT * FROM users WHERE LOWER(email) = LOWER(?)',
+        [email.trim()]
       );
       if (!user) {
-        return res.status(404).json({ error: 'No user found with this email or phone number.' });
+        return res.status(404).json({ error: 'No user found with this email address.' });
       }
       const bcrypt = require('bcryptjs');
       let passwordMatch = false;
@@ -254,17 +254,12 @@ app.post('/api/auth/login', async (req, res) => {
   }
 
   // 2. Google OAuth style login fallback / simple register
-  if (!name || (!email && !phone)) {
-    return res.status(400).json({ error: 'Name and email or phone are required for login' });
+  if (!name || !email) {
+    return res.status(400).json({ error: 'Name and email are required for login' });
   }
 
   try {
-    let user;
-    if (email) {
-      user = await dbQuery.get('SELECT * FROM users WHERE email = ?', [email.trim().toLowerCase()]);
-    } else {
-      user = await dbQuery.get('SELECT * FROM users WHERE phone = ?', [phone.trim()]);
-    }
+    let user = await dbQuery.get('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', [email.trim()]);
 
     if (user) {
       return res.json(user);
@@ -272,8 +267,8 @@ app.post('/api/auth/login', async (req, res) => {
 
     // Register user automatically if not exists (for Google login style)
     const result = await dbQuery.run(
-      'INSERT INTO users (name, email, phone) VALUES (?, ?, ?)',
-      [name.trim(), email ? email.trim().toLowerCase() : null, phone ? phone.trim() : null]
+      'INSERT INTO users (name, email) VALUES (?, ?)',
+      [name.trim(), email.trim().toLowerCase()]
     );
     const newUser = await dbQuery.get('SELECT * FROM users WHERE id = ?', [result.id]);
     res.status(201).json(newUser);
@@ -284,22 +279,22 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Explicit Sign Up endpoint
 app.post('/api/auth/signup', async (req, res) => {
-  const { name, phone, password } = req.body;
-  if (!name || !phone || !password) {
-    return res.status(400).json({ error: 'Name, phone number, and password are required' });
+  const { name, email, password } = req.body;
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: 'Name, email, and password are required' });
   }
 
   try {
-    // Check if phone number already registered
-    const existing = await dbQuery.get('SELECT * FROM users WHERE phone = ?', [phone.trim()]);
+    // Check if email already registered
+    const existing = await dbQuery.get('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', [email.trim()]);
     if (existing) {
-      return res.status(400).json({ error: 'Phone number is already registered' });
+      return res.status(400).json({ error: 'Email address is already registered' });
     }
 
     // Register new user
     const result = await dbQuery.run(
-      'INSERT INTO users (name, phone, password) VALUES (?, ?, ?)',
-      [name.trim(), phone.trim(), password.trim()]
+      'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
+      [name.trim(), email.trim().toLowerCase(), password.trim()]
     );
     const newUser = await dbQuery.get('SELECT * FROM users WHERE id = ?', [result.id]);
     res.status(201).json(newUser);
@@ -345,27 +340,16 @@ function checkIpRateLimit(ip) {
 }
 
 // 1. Send OTP for forgot password
+// 1. Send OTP for forgot password
 app.post('/api/auth/forgot-password/send-otp', async (req, res) => {
-  const { phoneNumber } = req.body;
-  if (!phoneNumber) {
-    return res.status(400).json({ error: 'Phone number or Email is required' });
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: 'Email address is required' });
   }
 
-  // Check if identifier contains '@' to determine if it is an email
-  const identifier = phoneNumber.trim();
-  const isEmail = identifier.includes('@');
-
-  let cleanIdentifier = identifier;
-  if (!isEmail) {
-    cleanIdentifier = identifier.replace(/\D/g, '');
-    if (!/^[6-9]\d{9}$/.test(cleanIdentifier)) {
-      return res.status(400).json({ error: 'Invalid 10-digit Indian phone number' });
-    }
-  } else {
-    // Validate email format
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanIdentifier)) {
-      return res.status(400).json({ error: 'Invalid email address format' });
-    }
+  const cleanEmail = email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    return res.status(400).json({ error: 'Invalid email address format' });
   }
 
   // Rate Limiting Checks
@@ -373,22 +357,17 @@ app.post('/api/auth/forgot-password/send-otp', async (req, res) => {
   if (checkIpRateLimit(clientIp)) {
     return res.status(429).json({ error: 'Too many requests from this IP. Please try again in 10 minutes.' });
   }
-  if (checkOtpRateLimit(cleanIdentifier)) {
-    return res.status(429).json({ error: 'Too many OTP requests for this identifier. Please try again in 10 minutes.' });
+  if (checkOtpRateLimit(cleanEmail)) {
+    return res.status(429).json({ error: 'Too many OTP requests for this email address. Please try again in 10 minutes.' });
   }
 
   try {
     // Check if user exists
-    let user;
-    if (isEmail) {
-      user = await dbQuery.get('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', [cleanIdentifier]);
-    } else {
-      user = await dbQuery.get('SELECT * FROM users WHERE phone = ?', [cleanIdentifier]);
-    }
+    const user = await dbQuery.get('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', [cleanEmail]);
 
     if (!user) {
-      // Diagnostic alert: explain that the input identifier is not linked to any account
-      return res.status(404).json({ error: `No registered account found for: ${cleanIdentifier}` });
+      // Diagnostic alert: explain that the input email is not linked to any account
+      return res.status(404).json({ error: `No registered account found for: ${cleanEmail}` });
     }
 
     // Generate random 6-digit OTP
@@ -402,28 +381,16 @@ app.post('/api/auth/forgot-password/send-otp', async (req, res) => {
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
     await dbQuery.run(
       'INSERT INTO otp_verifications (phone_number, otp_hash, purpose, expires_at) VALUES (?, ?, ?, ?)',
-      [cleanIdentifier.toLowerCase(), otpHash, 'FORGOT_PASSWORD', expiresAt]
+      [cleanEmail, otpHash, 'FORGOT_PASSWORD', expiresAt]
     );
 
-    if (isEmail) {
-      // Send OTP via Email SMTP
-      const { sendOtpEmail } = require('./email');
-      try {
-        await sendOtpEmail(user.email, user.name, otp);
-      } catch (emailErr) {
-        console.error('[Forgot Password Email Error]:', emailErr);
-        return res.status(500).json({ error: `SMTP Email failed: ${emailErr.message || emailErr}` });
-      }
-    } else {
-      // Send OTP via MSG91 SMS
-      const smsResult = await sendOtpSms(cleanIdentifier, otp);
-      if (!smsResult.success) {
-        console.error('[Forgot Password SMS] Failed to send SMS:', smsResult.error);
-        return res.status(500).json({ error: `SMS failed: ${JSON.stringify(smsResult.error) || 'Unknown error'}` });
-      }
-      if (smsResult.mocked) {
-        return res.json({ success: true, message: `[MOCK MODE] OTP: ${otp} (MSG91 credentials missing on backend)` });
-      }
+    // Send OTP via Email SMTP
+    const { sendOtpEmail } = require('./email');
+    try {
+      await sendOtpEmail(user.email, user.name, otp);
+    } catch (emailErr) {
+      console.error('[Forgot Password Email Error]:', emailErr);
+      return res.status(500).json({ error: `SMTP Email failed: ${emailErr.message || emailErr}` });
     }
 
     res.json({ success: true, message: 'OTP sent successfully' });
@@ -435,20 +402,18 @@ app.post('/api/auth/forgot-password/send-otp', async (req, res) => {
 
 // 2. Verify OTP
 app.post('/api/auth/forgot-password/verify-otp', async (req, res) => {
-  const { phoneNumber, otp } = req.body;
-  if (!phoneNumber || !otp) {
-    return res.status(400).json({ error: 'Identifier and OTP are required' });
+  const { email, otp } = req.body;
+  if (!email || !otp) {
+    return res.status(400).json({ error: 'Email and OTP are required' });
   }
 
-  const identifier = phoneNumber.trim();
-  const isEmail = identifier.includes('@');
-  const cleanIdentifier = isEmail ? identifier.toLowerCase() : identifier.replace(/\D/g, '');
+  const cleanEmail = email.trim().toLowerCase();
 
   try {
     // Fetch latest unverified OtpVerification
     const otpRecord = await dbQuery.get(
       'SELECT * FROM otp_verifications WHERE phone_number = ? AND purpose = ? AND (verified = FALSE OR verified = 0) ORDER BY created_at DESC LIMIT 1',
-      [cleanIdentifier, 'FORGOT_PASSWORD']
+      [cleanEmail, 'FORGOT_PASSWORD']
     );
 
     if (!otpRecord) {
@@ -482,9 +447,9 @@ app.post('/api/auth/forgot-password/verify-otp', async (req, res) => {
       [usePostgres ? true : 1, otpRecord.id]
     );
 
-    // Generate short-lived JWT resetToken (payload: phoneNumber, purpose), expiresIn: 10m
+    // Generate short-lived JWT resetToken (payload: email, purpose), expiresIn: 10m
     const resetToken = jwt.sign(
-      { phoneNumber: cleanIdentifier, purpose: 'RESET_PASSWORD' },
+      { email: cleanEmail, purpose: 'RESET_PASSWORD' },
       process.env.JWT_SECRET || 'fallback_secret_key_eazzio',
       { expiresIn: '10m' }
     );
@@ -517,21 +482,14 @@ app.post('/api/auth/forgot-password/reset', async (req, res) => {
       return res.status(401).json({ error: 'Invalid or expired reset token' });
     }
 
-    if (decoded.purpose !== 'RESET_PASSWORD' || !decoded.phoneNumber) {
+    if (decoded.purpose !== 'RESET_PASSWORD' || !decoded.email) {
       return res.status(400).json({ error: 'Invalid token purpose' });
     }
 
-    const identifier = decoded.phoneNumber;
-    const isEmail = identifier.includes('@');
+    const email = decoded.email;
 
-    // Find user by phone or email
-    let user;
-    if (isEmail) {
-      user = await dbQuery.get('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', [identifier]);
-    } else {
-      user = await dbQuery.get('SELECT * FROM users WHERE phone = ?', [identifier]);
-    }
-
+    // Find user by email
+    const user = await dbQuery.get('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', [email]);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -546,10 +504,10 @@ app.post('/api/auth/forgot-password/reset', async (req, res) => {
       [hashedPassword, user.id]
     );
 
-    // Delete/invalidate the used OtpVerification records for this phone number
+    // Delete/invalidate used OtpVerifications
     await dbQuery.run(
       'DELETE FROM otp_verifications WHERE phone_number = ?',
-      [identifier]
+      [email]
     );
 
     res.json({ success: true, message: 'Password reset successful' });
