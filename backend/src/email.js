@@ -76,7 +76,7 @@ async function sendPasswordResetEmail(toEmail, name, newPassword) {
  * @param {string} otp 
  */
 async function sendOtpEmail(toEmail, name, otp) {
-  const fromEmail = process.env.FROM_EMAIL || 'eazziogroup@gmail.com';
+  const fromEmail = process.env.FROM_EMAIL || process.env.SMTP_USER || 'aed402001@smtp-brevo.com';
   
   const mailOptions = {
     from: `"Eazzio Reminder" <${fromEmail}>`,

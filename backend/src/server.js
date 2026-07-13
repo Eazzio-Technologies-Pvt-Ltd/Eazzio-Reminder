@@ -387,8 +387,8 @@ app.post('/api/auth/forgot-password/send-otp', async (req, res) => {
     }
 
     if (!user) {
-      // Security best practice: return success message so we don't leak whether identifier is registered
-      return res.json({ success: true, message: 'OTP sent to registered account' });
+      // Diagnostic alert: explain that the input identifier is not linked to any account
+      return res.status(404).json({ error: `No registered account found for: ${cleanIdentifier}` });
     }
 
     // Generate random 6-digit OTP
@@ -408,22 +408,28 @@ app.post('/api/auth/forgot-password/send-otp', async (req, res) => {
     if (isEmail) {
       // Send OTP via Email SMTP
       const { sendOtpEmail } = require('./email');
-      await sendOtpEmail(user.email, user.name, otp);
+      try {
+        await sendOtpEmail(user.email, user.name, otp);
+      } catch (emailErr) {
+        console.error('[Forgot Password Email Error]:', emailErr);
+        return res.status(500).json({ error: `SMTP Email failed: ${emailErr.message || emailErr}` });
+      }
     } else {
       // Send OTP via MSG91 SMS
       const smsResult = await sendOtpSms(cleanIdentifier, otp);
       if (!smsResult.success) {
         console.error('[Forgot Password SMS] Failed to send SMS:', smsResult.error);
-        if (!smsResult.mocked) {
-          return res.status(500).json({ error: 'Failed to send OTP SMS. Please try again later.' });
-        }
+        return res.status(500).json({ error: `SMS failed: ${JSON.stringify(smsResult.error) || 'Unknown error'}` });
+      }
+      if (smsResult.mocked) {
+        return res.json({ success: true, message: `[MOCK MODE] OTP: ${otp} (MSG91 credentials missing on backend)` });
       }
     }
 
     res.json({ success: true, message: 'OTP sent successfully' });
   } catch (err) {
     console.error('[Forgot Password Send OTP] Error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: `Internal server error: ${err.message}` });
   }
 });
 
