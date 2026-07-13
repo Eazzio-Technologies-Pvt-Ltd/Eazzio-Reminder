@@ -6,9 +6,9 @@ import '../theme.dart';
 import 'reset_password_screen.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
-  final String phoneNumber;
+  final String email;
 
-  const OtpVerificationScreen({super.key, required this.phoneNumber});
+  const OtpVerificationScreen({super.key, required this.email});
 
   @override
   State<OtpVerificationScreen> createState() => _OtpVerificationScreenState();
@@ -78,7 +78,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
     final provider = Provider.of<ReminderProvider>(context, listen: false);
 
-    provider.verifyForgotPasswordOtp(widget.phoneNumber, otp).then((resetToken) {
+    provider.verifyForgotPasswordOtp(widget.email, otp).then((resetToken) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -107,11 +107,11 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   void _resendOtp() {
     final provider = Provider.of<ReminderProvider>(context, listen: false);
 
-    provider.sendForgotPasswordOtp(widget.phoneNumber).then((_) {
+    provider.sendForgotPasswordOtp(widget.email).then((_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('A new OTP has been sent successfully.'),
+            content: Text('A new OTP has been sent to your email successfully.'),
             backgroundColor: AppTheme.success,
           ),
         );
@@ -196,7 +196,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'We have sent a verification code to ${widget.phoneNumber.contains('@') ? widget.phoneNumber : '+91 ' + widget.phoneNumber}',
+                      'We have sent a verification code to ${widget.email}',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 14,

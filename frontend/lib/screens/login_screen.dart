@@ -17,11 +17,11 @@ class _LoginScreenState extends State<LoginScreen> {
   final _signInFormKey = GlobalKey<FormState>();
   final _signUpFormKey = GlobalKey<FormState>();
 
-  final _signInIdentifierController = TextEditingController(); // email or phone
+  final _signInEmailController = TextEditingController();
   final _signInPasswordController = TextEditingController();
 
   final _signUpNameController = TextEditingController();
-  final _signUpPhoneController = TextEditingController();
+  final _signUpEmailController = TextEditingController();
   final _signUpPasswordController = TextEditingController();
 
   bool _isSignIn = true;
@@ -29,10 +29,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    _signInIdentifierController.dispose();
+    _signInEmailController.dispose();
     _signInPasswordController.dispose();
     _signUpNameController.dispose();
-    _signUpPhoneController.dispose();
+    _signUpEmailController.dispose();
     _signUpPasswordController.dispose();
     super.dispose();
   }
@@ -41,10 +41,10 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_signInFormKey.currentState!.validate()) return;
 
     final provider = Provider.of<ReminderProvider>(context, listen: false);
-    final identifier = _signInIdentifierController.text.trim();
+    final email = _signInEmailController.text.trim();
     final password = _signInPasswordController.text.trim();
 
-    provider.loginWithCredentials(identifier, password).then((_) {
+    provider.loginWithCredentials(email, password).then((_) {
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const HomeScreen()),
@@ -67,25 +67,25 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final provider = Provider.of<ReminderProvider>(context, listen: false);
     final name = _signUpNameController.text.trim();
-    final phone = _signUpPhoneController.text.trim();
+    final email = _signUpEmailController.text.trim();
     final password = _signUpPasswordController.text.trim();
 
-    provider.signUpWithCredentials(name, phone, password).then((_) {
+    provider.signUpWithCredentials(name, email, password).then((_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Sign up successful! Please sign in with your phone number and password.'),
+            content: Text('Sign up successful! Please sign in with your email address and password.'),
             backgroundColor: AppTheme.success,
           ),
         );
         setState(() {
-          // Pre-populate the Sign In phone number
-          _signInIdentifierController.text = phone;
+          // Pre-populate the Sign In email
+          _signInEmailController.text = email;
           // Switch tab to Sign In selection
           _isSignIn = true;
           // Clear sign up controllers
           _signUpNameController.clear();
-          _signUpPhoneController.clear();
+          _signUpEmailController.clear();
           _signUpPasswordController.clear();
         });
       }
@@ -425,17 +425,17 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Enter your phone number or email and password to sync task schedules.',
+            'Enter your email and password to sync task schedules.',
             style: TextStyle(fontSize: 12.5, color: Color(0xFF6E6893), height: 1.3),
           ),
           const SizedBox(height: 24),
           TextFormField(
-            controller: _signInIdentifierController,
+            controller: _signInEmailController,
             keyboardType: TextInputType.emailAddress,
             decoration: InputDecoration(
-              labelText: 'Phone Number or Email Address',
+              labelText: 'Email Address',
               prefixIcon: const Icon(Icons.mail_outline_rounded, color: AppTheme.primary),
-              hintText: 'Enter phone number/ Email address',
+              hintText: 'Enter registered email address',
               filled: true,
               fillColor: const Color(0xFFF9F8FD),
               enabledBorder: OutlineInputBorder(
@@ -447,7 +447,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 borderSide: const BorderSide(color: AppTheme.primary, width: 1.8),
               ),
             ),
-            validator: (value) => value == null || value.trim().isEmpty ? 'Please enter your phone number or email' : null,
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) return 'Please enter your email';
+              if (!value.contains('@')) return 'Please enter a valid email address';
+              return null;
+            },
           ),
           const SizedBox(height: 16),
           TextFormField(
@@ -585,7 +589,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Sign up with phone and create a password to begin syncing schedules.',
+            'Sign up with your email and create a password to begin syncing schedules.',
             style: TextStyle(fontSize: 12.5, color: Color(0xFF6E6893), height: 1.3),
           ),
           const SizedBox(height: 24),
@@ -610,12 +614,12 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           const SizedBox(height: 16),
           TextFormField(
-            controller: _signUpPhoneController,
-            keyboardType: TextInputType.phone,
+            controller: _signUpEmailController,
+            keyboardType: TextInputType.emailAddress,
             decoration: InputDecoration(
-              labelText: 'Phone Number',
-              prefixIcon: const Icon(Icons.phone_outlined, color: AppTheme.primary),
-              hintText: 'e.g. 9876543210',
+              labelText: 'Email Address',
+              prefixIcon: const Icon(Icons.mail_outline_rounded, color: AppTheme.primary),
+              hintText: 'e.g. john@example.com',
               filled: true,
               fillColor: const Color(0xFFF9F8FD),
               enabledBorder: OutlineInputBorder(
@@ -628,8 +632,8 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
             validator: (value) {
-              if (value == null || value.trim().isEmpty) return 'Phone number is required';
-              if (value.trim().length < 10) return 'Enter a valid 10-digit number';
+              if (value == null || value.trim().isEmpty) return 'Email address is required';
+              if (!value.contains('@')) return 'Enter a valid email address';
               return null;
             },
           ),

@@ -256,7 +256,7 @@ class ReminderProvider extends ChangeNotifier {
         _currentUserEmail = email;
         _currentUserPhone = null;
       } else {
-        final profile = await _apiService.login(name, email, null);
+        final profile = await _apiService.login(name, email);
         final id = profile['id'] as int;
         await _localStorageService.setUserProfile(id, name, email, null);
         _currentUserId = id;
@@ -275,61 +275,29 @@ class ReminderProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> loginWithPhone(String name, String phone) async {
+  Future<void> loginWithCredentials(String email, String password) async {
     _isLoading = true;
     notifyListeners();
 
     try {
       if (_appMode == 'local') {
         final localId = DateTime.now().millisecondsSinceEpoch;
-        await _localStorageService.setUserProfile(localId, name, null, phone);
+        final name = email.split('@').first;
+        await _localStorageService.setUserProfile(localId, name, email, null);
         _currentUserId = localId;
-        _currentUserName = name;
-        _currentUserEmail = null;
-        _currentUserPhone = phone;
-      } else {
-        final profile = await _apiService.login(name, null, phone);
-        final id = profile['id'] as int;
-        await _localStorageService.setUserProfile(id, name, null, phone);
-        _currentUserId = id;
-        _currentUserName = name;
-        _currentUserEmail = null;
-        _currentUserPhone = phone;
-      }
-
-      await refreshAll();
-    } catch (e) {
-      print('[Auth] Login with Phone failed: $e');
-      rethrow;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> loginWithCredentials(String identifier, String password) async {
-    _isLoading = true;
-    notifyListeners();
-
-    try {
-      if (_appMode == 'local') {
-        final localId = DateTime.now().millisecondsSinceEpoch;
-        final name = identifier.split('@').first;
-        await _localStorageService.setUserProfile(localId, name, identifier.contains('@') ? identifier : null, identifier.contains('@') ? null : identifier);
-        _currentUserId = localId;
-        _currentUserName = name;
-        _currentUserEmail = identifier.contains('@') ? identifier : null;
-        _currentUserPhone = identifier.contains('@') ? null : identifier;
-      } else {
-        final profile = await _apiService.loginWithPassword(identifier, password);
-        final id = profile['id'] as int;
-        final name = profile['name'] as String;
-        final email = profile['email'] as String?;
-        final phone = profile['phone'] as String?;
-        await _localStorageService.setUserProfile(id, name, email, phone);
-        _currentUserId = id;
         _currentUserName = name;
         _currentUserEmail = email;
+        _currentUserPhone = null;
+      } else {
+        final profile = await _apiService.loginWithPassword(email, password);
+        final id = profile['id'] as int;
+        final name = profile['name'] as String;
+        final userEmail = profile['email'] as String?;
+        final phone = profile['phone'] as String?;
+        await _localStorageService.setUserProfile(id, name, userEmail, phone);
+        _currentUserId = id;
+        _currentUserName = name;
+        _currentUserEmail = userEmail;
         _currentUserPhone = phone;
       }
 
@@ -343,7 +311,7 @@ class ReminderProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> signUpWithCredentials(String name, String phone, String password) async {
+  Future<void> signUpWithCredentials(String name, String email, String password) async {
     _isLoading = true;
     notifyListeners();
 
@@ -353,7 +321,7 @@ class ReminderProvider extends ChangeNotifier {
         await Future.delayed(const Duration(milliseconds: 500));
       } else {
         // Register user on server without setting local user profile session
-        await _apiService.signupWithPassword(name, phone, password);
+        await _apiService.signupWithPassword(name, email, password);
       }
     } catch (e) {
       print('[Auth] Sign up failed: $e');
@@ -364,22 +332,7 @@ class ReminderProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> forgotPassword(String email) async {
-    try {
-      if (_appMode == 'local') {
-        await Future.delayed(const Duration(milliseconds: 500));
-        return true;
-      } else {
-        await _apiService.forgotPassword(email);
-        return true;
-      }
-    } catch (e) {
-      print('[Auth] Forgot password request failed: $e');
-      return false;
-    }
-  }
-
-  Future<bool> sendForgotPasswordOtp(String phoneNumber) async {
+  Future<bool> sendForgotPasswordOtp(String email) async {
     _isLoading = true;
     notifyListeners();
     try {
@@ -387,7 +340,7 @@ class ReminderProvider extends ChangeNotifier {
         await Future.delayed(const Duration(milliseconds: 500));
         return true;
       } else {
-        await _apiService.sendForgotPasswordOtp(phoneNumber);
+        await _apiService.sendForgotPasswordOtp(email);
         return true;
       }
     } catch (e) {
@@ -399,7 +352,7 @@ class ReminderProvider extends ChangeNotifier {
     }
   }
 
-  Future<String> verifyForgotPasswordOtp(String phoneNumber, String otp) async {
+  Future<String> verifyForgotPasswordOtp(String email, String otp) async {
     _isLoading = true;
     notifyListeners();
     try {
@@ -407,7 +360,7 @@ class ReminderProvider extends ChangeNotifier {
         await Future.delayed(const Duration(milliseconds: 500));
         return 'mock_local_reset_token';
       } else {
-        return await _apiService.verifyForgotPasswordOtp(phoneNumber, otp);
+        return await _apiService.verifyForgotPasswordOtp(email, otp);
       }
     } catch (e) {
       print('[Auth] Verify OTP failed: $e');

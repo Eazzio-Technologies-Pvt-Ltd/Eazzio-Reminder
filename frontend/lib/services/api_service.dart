@@ -115,11 +115,11 @@ class ApiService {
   }
 
   // Login/Register
-  Future<Map<String, dynamic>> login(String name, String? email, String? phone) async {
+  Future<Map<String, dynamic>> login(String name, String email) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/login'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'name': name, 'email': email, 'phone': phone}),
+      body: jsonEncode({'name': name, 'email': email}),
     );
     if (response.statusCode == 200 || response.statusCode == 201) {
       return jsonDecode(response.body) as Map<String, dynamic>;
@@ -128,12 +128,12 @@ class ApiService {
     }
   }
 
-  // Password sign-in (email or phone)
-  Future<Map<String, dynamic>> loginWithPassword(String identifier, String password) async {
+  // Password sign-in (email only)
+  Future<Map<String, dynamic>> loginWithPassword(String email, String password) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/login'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'identifier': identifier, 'password': password}),
+      body: jsonEncode({'email': email, 'password': password}),
     );
     if (response.statusCode == 200 || response.statusCode == 201) {
       return jsonDecode(response.body) as Map<String, dynamic>;
@@ -144,11 +144,11 @@ class ApiService {
   }
 
   // Password sign-up
-  Future<Map<String, dynamic>> signupWithPassword(String name, String phone, String password) async {
+  Future<Map<String, dynamic>> signupWithPassword(String name, String email, String password) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/signup'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'name': name, 'phone': phone, 'password': password}),
+      body: jsonEncode({'name': name, 'email': email, 'password': password}),
     );
     if (response.statusCode == 200 || response.statusCode == 201) {
       return jsonDecode(response.body) as Map<String, dynamic>;
@@ -158,25 +158,12 @@ class ApiService {
     }
   }
 
-  // Forgot Password (Request Reset Link)
-  Future<void> forgotPassword(String email) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/auth/forgot-password'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email}),
-    );
-    if (response.statusCode != 200) {
-      final body = jsonDecode(response.body);
-      throw Exception(body['error'] ?? 'Request failed');
-    }
-  }
-
   // Send OTP for forgot password
-  Future<void> sendForgotPasswordOtp(String phoneNumber) async {
+  Future<void> sendForgotPasswordOtp(String email) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/forgot-password/send-otp'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'phoneNumber': phoneNumber}),
+      body: jsonEncode({'email': email}),
     );
     if (response.statusCode != 200) {
       final body = jsonDecode(response.body);
@@ -185,11 +172,11 @@ class ApiService {
   }
 
   // Verify OTP for forgot password and return reset token
-  Future<String> verifyForgotPasswordOtp(String phoneNumber, String otp) async {
+  Future<String> verifyForgotPasswordOtp(String email, String otp) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/forgot-password/verify-otp'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'phoneNumber': phoneNumber, 'otp': otp}),
+      body: jsonEncode({'email': email, 'otp': otp}),
     );
     final body = jsonDecode(response.body);
     if (response.statusCode == 200) {

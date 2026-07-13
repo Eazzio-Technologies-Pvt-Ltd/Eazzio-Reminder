@@ -13,11 +13,11 @@ class ForgotPasswordScreen extends StatefulWidget {
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _phoneController = TextEditingController();
+  final _emailController = TextEditingController();
 
   @override
   void dispose() {
-    _phoneController.dispose();
+    _emailController.dispose();
     super.dispose();
   }
 
@@ -25,19 +25,19 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final provider = Provider.of<ReminderProvider>(context, listen: false);
-    final phoneNumber = _phoneController.text.trim();
+    final email = _emailController.text.trim();
 
-    provider.sendForgotPasswordOtp(phoneNumber).then((_) {
+    provider.sendForgotPasswordOtp(email).then((_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('OTP sent to registered number successfully.'),
+            content: Text('OTP sent to registered email successfully.'),
             backgroundColor: AppTheme.success,
           ),
         );
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => OtpVerificationScreen(phoneNumber: phoneNumber),
+            builder: (context) => OtpVerificationScreen(email: email),
           ),
         );
       }
@@ -116,7 +116,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         ),
                         const SizedBox(height: 12),
                         const Text(
-                          'Enter your registered email address or mobile number below to receive a 6-digit OTP code to reset your password.',
+                          'Enter your registered email address below to receive a 6-digit OTP code to reset your password.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 14,
@@ -127,31 +127,24 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         Form(
                           key: _formKey,
                           child: TextFormField(
-                            controller: _phoneController,
+                            controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
                             style: TextStyle(
                               color: isDark ? Colors.white : AppTheme.textPrimaryLightMode,
                               fontWeight: FontWeight.w600,
                             ),
                             decoration: const InputDecoration(
-                              labelText: 'Email Address or Phone Number',
-                              hintText: 'Enter registered email or phone',
-                              prefixIcon: Icon(Icons.perm_identity_rounded, size: 22),
+                              labelText: 'Email Address',
+                              hintText: 'Enter registered email address',
+                              prefixIcon: Icon(Icons.mail_outline_rounded, size: 22),
                             ),
                             validator: (value) {
                               if (value == null || value.trim().isEmpty) {
-                                return 'Please enter your email or phone number';
+                                return 'Please enter your email address';
                               }
                               final text = value.trim();
-                              if (text.contains('@')) {
-                                if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(text)) {
-                                  return 'Please enter a valid email address';
-                                }
-                              } else {
-                                final clean = text.replaceAll(RegExp(r'\D'), '');
-                                if (!RegExp(r'^[6-9]\d{9}$').hasMatch(clean)) {
-                                  return 'Please enter a valid 10-digit Indian phone number';
-                                }
+                              if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(text)) {
+                                return 'Please enter a valid email address';
                               }
                               return null;
                             },
