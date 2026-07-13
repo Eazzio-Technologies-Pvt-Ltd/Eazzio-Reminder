@@ -26,7 +26,7 @@ class LocalStorageService {
 
   Future<String> getAppMode() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(keyAppMode) ?? 'local';
+    return prefs.getString(keyAppMode) ?? 'server';
   }
 
   Future<void> setAppMode(String mode) async {
@@ -36,7 +36,7 @@ class LocalStorageService {
 
   Future<String> getApiBaseUrl() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(keyApiBaseUrl) ?? 'http://10.0.2.2:3000/api';
+    return prefs.getString(keyApiBaseUrl) ?? 'https://eazzio-reminder.onrender.com/api';
   }
 
   Future<void> setApiBaseUrl(String url) async {

@@ -3,9 +3,11 @@ import 'package:provider/provider.dart';
 import '../providers/reminder_provider.dart';
 import '../theme.dart';
 import '../services/native_service.dart';
+import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  final bool isTab;
+  const SettingsScreen({super.key, this.isTab = false});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -136,7 +138,9 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
           backgroundColor: AppTheme.success,
         ),
       );
-      navigator.pop();
+      if (!widget.isTab) {
+        navigator.pop();
+      }
     }).catchError((err) {
       scaffoldMessenger.showSnackBar(
         SnackBar(
@@ -160,10 +164,13 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: theme.brightness == Brightness.light ? Colors.black87 : Colors.white),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+        automaticallyImplyLeading: !widget.isTab,
+        leading: widget.isTab
+            ? null
+            : IconButton(
+                icon: Icon(Icons.arrow_back, color: theme.brightness == Brightness.light ? Colors.black87 : Colors.white),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
       ),
       body: Container(
         decoration: BoxDecoration(
@@ -184,125 +191,6 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
               child: ListView(
                 padding: const EdgeInsets.all(24.0),
                 children: [
-                  // Top Status Header Card
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      gradient: _appMode == 'local'
-                          ? AppTheme.primaryGradient
-                          : AppTheme.accentGradient,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: (_appMode == 'local' ? AppTheme.primary : AppTheme.secondary).withOpacity(0.3),
-                          blurRadius: 15,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: const BoxDecoration(
-                            color: Colors.white24,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            _appMode == 'local' ? Icons.phonelink_setup : Icons.cloud_done,
-                            color: Colors.white,
-                            size: 32,
-                          ),
-                        ),
-                        const SizedBox(width: 20),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _appMode == 'local'
-                                    ? 'Standalone Local Mode Active'
-                                    : 'Node.js Server Mode Active',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _appMode == 'local'
-                                    ? 'The app is running completely on-device, handling scheduling and sending directly.'
-                                    : 'The app connects to your external server to pull schedules and trigger runs.',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.white70,
-                                  height: 1.4,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-
-                  // Operation Mode
-                  Text(
-                    'Operation Mode',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildModeCard(
-                          selected: _appMode == 'local',
-                          title: 'Standalone (Local)',
-                          subtitle: 'Run database in-app',
-                          icon: Icons.smartphone,
-                          onTap: () => setState(() => _appMode = 'local'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildModeCard(
-                          selected: _appMode == 'server',
-                          title: 'Server-Connected',
-                          subtitle: 'Express backend sync',
-                          icon: Icons.dns,
-                          onTap: () => setState(() => _appMode = 'server'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Server Configuration
-                  if (_appMode == 'server') ...[
-                    Text(
-                      'Server Configuration',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _apiUrlController,
-                      decoration: const InputDecoration(
-                        labelText: 'Backend API Base URL',
-                        prefixIcon: Icon(Icons.link),
-                        helperText: 'Use http://10.0.2.2:3000/api for Emulators or http://localhost:3000/api for Desktop.',
-                      ),
-                      validator: (value) {
-                        if (_appMode == 'server' && (value == null || value.trim().isEmpty)) {
-                          return 'Backend API Base URL is required in Server mode';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 24),
-                  ],
-
                   // Appearance (Dark / Light)
                   Text(
                     'Appearance',
@@ -476,6 +364,69 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                               : null,
                         ),
                       ],
+                    ),
+                  ),
+                  // Account Actions section
+                  Text(
+                    'Account Actions',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
+                  ),
+                  const SizedBox(height: 12),
+                  Card(
+                    elevation: 0,
+                    color: isDark ? const Color(0x08FFFFFF) : const Color(0xFFFEE2E2).withOpacity(0.4),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(color: isDark ? const Color(0x11FFFFFF) : const Color(0xFFFCA5A5), width: 1),
+                    ),
+                    child: ListTile(
+                      leading: const Icon(
+                        Icons.logout_rounded,
+                        color: AppTheme.danger,
+                        size: 28,
+                      ),
+                      title: const Text('Logout', style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.danger)),
+                      subtitle: const Text('Sign out of your account on this device.', style: TextStyle(fontSize: 12)),
+                      trailing: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.danger,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          minimumSize: Size.zero,
+                        ),
+                        onPressed: () {
+                          showDialog(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('Confirm Logout'),
+                              content: const Text('Are you sure you want to sign out of your account?'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(context).pop(),
+                                  child: const Text('Cancel'),
+                                ),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(backgroundColor: AppTheme.danger),
+                                  onPressed: () {
+                                    Navigator.of(context).pop();
+                                    final provider = Provider.of<ReminderProvider>(context, listen: false);
+                                    provider.logout().then((_) {
+                                      if (mounted) {
+                                        Navigator.of(context).pushAndRemoveUntil(
+                                          MaterialPageRoute(builder: (context) => const LoginScreen()),
+                                          (route) => false,
+                                        );
+                                      }
+                                    });
+                                  },
+                                  child: const Text('Logout', style: TextStyle(color: Colors.white)),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        child: const Text('Logout'),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 32),

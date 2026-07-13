@@ -144,7 +144,10 @@ async function runMigration() {
     console.log('Migrating "team_requests" table...');
     const teamRequests = await sqliteAll('SELECT * FROM team_requests');
     console.log(`Found ${teamRequests.length} team requests to migrate.`);
+    const validUserIds = new Set(users.map(u => u.id));
     for (const r of teamRequests) {
+      const senderId = validUserIds.has(r.sender_id) ? r.sender_id : null;
+      const receiverId = validUserIds.has(r.receiver_id) ? r.receiver_id : null;
       await pgClient.query(
         `INSERT INTO team_requests (id, sender_id, receiver_id, status, created_at)
          VALUES ($1, $2, $3, $4, $5)
@@ -153,7 +156,7 @@ async function runMigration() {
            receiver_id = EXCLUDED.receiver_id,
            status = EXCLUDED.status,
            created_at = EXCLUDED.created_at`,
-        [r.id, r.sender_id, r.receiver_id, r.status, parseSqliteDate(r.created_at)]
+        [r.id, senderId, receiverId, r.status, parseSqliteDate(r.created_at)]
       );
     }
     if (teamRequests.length > 0) {
@@ -166,6 +169,9 @@ async function runMigration() {
     const reminders = await sqliteAll('SELECT * FROM reminders');
     console.log(`Found ${reminders.length} reminders to migrate.`);
     for (const rem of reminders) {
+      const userId = validUserIds.has(rem.user_id) ? rem.user_id : null;
+      const assignedTo = validUserIds.has(rem.assigned_to) ? rem.assigned_to : null;
+      const assignedBy = validUserIds.has(rem.assigned_by) ? rem.assigned_by : null;
       await pgClient.query(
         `INSERT INTO reminders (
           id, title, recipient_name, recipient_phone, event_type, remind_date, remind_time,
@@ -194,7 +200,7 @@ async function runMigration() {
         [
           rem.id, rem.title, rem.recipient_name, rem.recipient_phone, rem.event_type, rem.remind_date, rem.remind_time,
           rem.message_template, rem.reminder_type, rem.audio_url, rem.send_option, rem.status, rem.notification_sound,
-          rem.user_id, rem.assigned_to, rem.assigned_by, rem.repeat_option, parseSqliteDate(rem.created_at)
+          userId, assignedTo, assignedBy, rem.repeat_option, parseSqliteDate(rem.created_at)
         ]
       );
     }
@@ -207,7 +213,9 @@ async function runMigration() {
     console.log('Migrating "logs" table...');
     const logs = await sqliteAll('SELECT * FROM logs');
     console.log(`Found ${logs.length} logs to migrate.`);
+    const validReminderIds = new Set(reminders.map(r => r.id));
     for (const log of logs) {
+      const reminderId = validReminderIds.has(log.reminder_id) ? log.reminder_id : null;
       await pgClient.query(
         `INSERT INTO logs (id, reminder_id, recipient_name, recipient_phone, reminder_type, event_type, status, details, sent_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -220,7 +228,7 @@ async function runMigration() {
            status = EXCLUDED.status,
            details = EXCLUDED.details,
            sent_at = EXCLUDED.sent_at`,
-        [log.id, log.reminder_id, log.recipient_name, log.recipient_phone, log.reminder_type, log.event_type, log.status, log.details, parseSqliteDate(log.sent_at)]
+        [log.id, reminderId, log.recipient_name, log.recipient_phone, log.reminder_type, log.event_type, log.status, log.details, parseSqliteDate(log.sent_at)]
       );
     }
     if (logs.length > 0) {

@@ -21,8 +21,8 @@ class ReminderProvider extends ChangeNotifier {
   Function(Reminder)? onAutoReminderDue;
 
   // Settings
-  String _appMode = 'local';
-  String _apiBaseUrl = 'http://10.0.2.2:3000/api';
+  String _appMode = 'server';
+  String _apiBaseUrl = 'https://eazzio-reminder.onrender.com/api';
   String _themeModeStr = 'dark';
   String _defaultCountryCode = '+91';
 
@@ -73,7 +73,7 @@ class ReminderProvider extends ChangeNotifier {
     notifyListeners();
 
     // 1. Load settings from Local Storage
-    _appMode = await _localStorageService.getAppMode();
+    _appMode = 'server'; // Always in server mode
     _apiBaseUrl = await _localStorageService.getApiBaseUrl();
     _themeModeStr = await _localStorageService.getThemeMode();
     _defaultCountryCode = await _localStorageService.getDefaultCountryCode();
@@ -349,24 +349,12 @@ class ReminderProvider extends ChangeNotifier {
 
     try {
       if (_appMode == 'local') {
-        final localId = DateTime.now().millisecondsSinceEpoch;
-        await _localStorageService.setUserProfile(localId, name, null, phone);
-        _currentUserId = localId;
-        _currentUserName = name;
-        _currentUserEmail = null;
-        _currentUserPhone = phone;
+        // Just mock a successful registration (no local storage/state login changes)
+        await Future.delayed(const Duration(milliseconds: 500));
       } else {
-        final profile = await _apiService.signupWithPassword(name, phone, password);
-        final id = profile['id'] as int;
-        final email = profile['email'] as String?;
-        await _localStorageService.setUserProfile(id, name, email, phone);
-        _currentUserId = id;
-        _currentUserName = name;
-        _currentUserEmail = email;
-        _currentUserPhone = phone;
+        // Register user on server without setting local user profile session
+        await _apiService.signupWithPassword(name, phone, password);
       }
-
-      await refreshAll();
     } catch (e) {
       print('[Auth] Sign up failed: $e');
       rethrow;

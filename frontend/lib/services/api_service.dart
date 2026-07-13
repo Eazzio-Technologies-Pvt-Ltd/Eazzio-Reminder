@@ -5,7 +5,7 @@ import '../models/reminder.dart';
 class ApiService {
   String baseUrl;
 
-  ApiService({this.baseUrl = 'http://localhost:3000/api'});
+  ApiService({this.baseUrl = 'https://eazzio-reminder.onrender.com/api'});
 
   // Fetch all reminders
   Future<List<Reminder>> getReminders({int? userId}) async {

@@ -4,6 +4,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const { dbQuery } = require('./db');
 const { initScheduler, checkAndProcessReminders } = require('./scheduler');
+const { sendPasswordResetEmail } = require('./email');
 require('dotenv').config();
 
 function formatReminder(reminder) {
@@ -317,6 +318,20 @@ app.post('/api/auth/reset-password', async (req, res) => {
       'UPDATE users SET password = ? WHERE id = ?',
       [newPassword.trim(), user.id]
     );
+
+    // Send confirmation email via Brevo SMTP
+    let targetEmail = user.email;
+    if (!targetEmail && identifier.trim().toLowerCase().includes('@')) {
+      targetEmail = identifier.trim().toLowerCase();
+    }
+
+    if (targetEmail) {
+      try {
+        await sendPasswordResetEmail(targetEmail, user.name, newPassword.trim());
+      } catch (emailErr) {
+        console.error(`[SMTP] Failed to send password reset email to ${targetEmail}:`, emailErr);
+      }
+    }
 
     res.json({ success: true, message: 'Password reset successfully' });
   } catch (err) {

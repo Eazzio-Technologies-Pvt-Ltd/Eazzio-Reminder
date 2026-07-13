@@ -11,7 +11,6 @@ import 'history_screen.dart';
 import 'schedules_screen.dart';
 import 'settings_screen.dart';
 import 'teams_screen.dart';
-import 'login_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -60,40 +59,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          const AppLogo(),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: Icon(
-                  Icons.settings_rounded,
-                  color: isDark ? Colors.white : AppTheme.primary,
-                ),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (context) => const SettingsScreen()),
-                  );
-                },
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(
-                  Icons.logout_rounded,
-                  color: AppTheme.danger,
-                ),
-                tooltip: 'Logout',
-                onPressed: () {
-                  provider.logout().then((_) {
-                    Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (context) => const LoginScreen()),
-                      (route) => false,
-                    );
-                  });
-                },
-              ),
-            ],
-          ),
+        children: const [
+          AppLogo(),
         ],
       ),
     );
@@ -362,6 +329,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SchedulesScreen(),
                   const HistoryScreen(),
                   const TeamsScreen(),
+                  const SettingsScreen(isTab: true),
                 ],
               ),
             ),
@@ -386,6 +354,7 @@ class _HomeScreenState extends State<HomeScreen> {
               _buildNavItem(1, Icons.playlist_add_check_outlined, Icons.playlist_add_check, 'All Tasks', isDark, theme),
               _buildNavItem(2, Icons.assignment_outlined, Icons.assignment, 'Outbox', isDark, theme),
               _buildNavItem(3, Icons.people_outline, Icons.people, 'Teams', isDark, theme),
+              _buildNavItem(4, Icons.settings_outlined, Icons.settings, 'Settings', isDark, theme),
             ],
           ),
         ),
