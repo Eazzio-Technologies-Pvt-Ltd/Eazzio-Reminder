@@ -70,37 +70,34 @@ async function sendPasswordResetEmail(toEmail, name, newPassword) {
 }
 
 /**
- * Send password reset link email
+ * Send OTP password reset email
  * @param {string} toEmail 
  * @param {string} name 
- * @param {string} resetLink 
+ * @param {string} otp 
  */
-async function sendForgotPasswordEmail(toEmail, name, resetLink) {
+async function sendOtpEmail(toEmail, name, otp) {
   const fromEmail = process.env.FROM_EMAIL || 'eazziogroup@gmail.com';
   
   const mailOptions = {
     from: `"Eazzio Reminder" <${fromEmail}>`,
     to: toEmail,
-    subject: 'Password Reset Request - Eazzio Reminder',
+    subject: 'Your Password Reset OTP - Eazzio Reminder',
     html: `
       <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 30px; border: 1px solid #e8e7f3; border-radius: 16px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(124, 58, 237, 0.05);">
         <div style="text-align: center; margin-bottom: 24px;">
-          <h2 style="color: #7C3AED; margin: 0; font-size: 24px; font-weight: bold;">Password Reset Request</h2>
+          <h2 style="color: #7C3AED; margin: 0; font-size: 24px; font-weight: bold;">Security Verification Code</h2>
           <p style="color: #6E6893; font-size: 14px; margin-top: 6px;">Eazzio Reminder Security Services</p>
         </div>
         <p style="color: #1E1B4B; font-size: 15px; line-height: 1.5;">Dear <strong>${name}</strong>,</p>
-        <p style="color: #4A457E; font-size: 14px; line-height: 1.5;">We received a request to reset your password for your Eazzio Reminder account. Click the button below to set a new password. This link will expire in 15 minutes.</p>
+        <p style="color: #4A457E; font-size: 14px; line-height: 1.5;">We received a request to reset your password. Use the following 6-digit verification code (OTP) to complete the process. This code will expire in 5 minutes.</p>
         
         <div style="text-align: center; margin: 32px 0;">
-          <a href="${resetLink}" style="background-color: #7C3AED; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 12px; font-weight: bold; font-size: 15px; display: inline-block; box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25);">Reset Password</a>
+          <div style="background-color: #F9F8FD; border: 1.5px dashed #7C3AED; color: #7C3AED; font-size: 32px; font-weight: 800; letter-spacing: 6px; padding: 18px; border-radius: 12px; display: inline-block; min-width: 200px; font-family: monospace; text-align: center;">${otp}</div>
         </div>
-        
-        <p style="color: #757095; font-size: 12px; line-height: 1.5;">If the button above does not work, copy and paste this URL into your browser:</p>
-        <p style="font-size: 12px; color: #7C3AED; word-break: break-all; font-family: monospace; background-color: #F9F8FD; border: 1px solid #E5E3F5; padding: 12px; border-radius: 8px;">${resetLink}</p>
         
         <div style="background-color: #F9F8FD; border: 1px solid #E5E3F5; border-radius: 12px; padding: 14px; margin-top: 24px;">
           <p style="color: #757095; font-size: 12px; margin: 0; line-height: 1.4;">
-            If you did not request a password reset, you can safely ignore this email. Your current password will remain unchanged.
+            If you did not request a password reset, you can safely ignore this email. Do not share this OTP code with anyone.
           </p>
         </div>
         
@@ -112,15 +109,15 @@ async function sendForgotPasswordEmail(toEmail, name, resetLink) {
 
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log(`[SMTP] Password reset link sent to ${toEmail}: ${info.messageId}`);
+    console.log(`[SMTP] OTP email sent to ${toEmail}: ${info.messageId}`);
     return info;
   } catch (error) {
-    console.error(`[SMTP] Error sending password reset link to ${toEmail}:`, error);
+    console.error(`[SMTP] Error sending OTP email to ${toEmail}:`, error);
     throw error;
   }
 }
 
 module.exports = {
   sendPasswordResetEmail,
-  sendForgotPasswordEmail,
+  sendOtpEmail,
 };

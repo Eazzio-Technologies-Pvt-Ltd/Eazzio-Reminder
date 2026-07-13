@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/reminder_provider.dart';
 import '../theme.dart';
 import 'home_screen.dart';
+import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -476,7 +477,11 @@ class _LoginScreenState extends State<LoginScreen> {
           Align(
             alignment: Alignment.centerRight,
             child: TextButton(
-              onPressed: _showForgotPasswordDialog,
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (context) => const ForgotPasswordScreen()),
+                );
+              },
               style: TextButton.styleFrom(
                 padding: EdgeInsets.zero,
                 minimumSize: Size.zero,
@@ -730,100 +735,4 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  void _showForgotPasswordDialog() {
-    final emailController = TextEditingController();
-    final dialogKey = GlobalKey<FormState>();
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return Theme(
-          data: AppTheme.lightTheme,
-          child: StatefulBuilder(
-            builder: (context, setModalState) {
-              return AlertDialog(
-                backgroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                title: const Row(
-                  children: [
-                    Icon(Icons.lock_reset_rounded, color: AppTheme.primary, size: 28),
-                    SizedBox(width: 8),
-                    Text('Forgot Password', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87)),
-                  ],
-                ),
-                content: Form(
-                  key: dialogKey,
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Text(
-                          'Enter your registered Gmail address below and we will send you a password reset link.',
-                          style: TextStyle(fontSize: 13, color: Colors.black54, height: 1.4),
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          style: const TextStyle(color: Colors.black87),
-                          decoration: const InputDecoration(
-                            labelText: 'Gmail / Email Address',
-                            prefixIcon: Icon(Icons.mail_outline, size: 20),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) return 'Please enter your email';
-                            if (!value.contains('@')) return 'Please enter a valid email address';
-                            return null;
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-                  ),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primary,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    onPressed: () async {
-                      if (!dialogKey.currentState!.validate()) return;
-                      
-                      final provider = Provider.of<ReminderProvider>(context, listen: false);
-                      final success = await provider.forgotPassword(
-                        emailController.text.trim(),
-                      );
-  
-                      if (success) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Password reset link sent! Please check your email inbox.'),
-                            backgroundColor: AppTheme.success,
-                          ),
-                        );
-                        Navigator.pop(context);
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Failed to request reset link. Please check your network connection.'),
-                            backgroundColor: AppTheme.danger,
-                          ),
-                        );
-                      }
-                    },
-                    child: const Text('Send Link', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
 }

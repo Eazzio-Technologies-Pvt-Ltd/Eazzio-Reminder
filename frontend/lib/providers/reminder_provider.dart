@@ -379,6 +379,66 @@ class ReminderProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> sendForgotPasswordOtp(String phoneNumber) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      if (_appMode == 'local') {
+        await Future.delayed(const Duration(milliseconds: 500));
+        return true;
+      } else {
+        await _apiService.sendForgotPasswordOtp(phoneNumber);
+        return true;
+      }
+    } catch (e) {
+      print('[Auth] Send OTP failed: $e');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<String> verifyForgotPasswordOtp(String phoneNumber, String otp) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      if (_appMode == 'local') {
+        await Future.delayed(const Duration(milliseconds: 500));
+        return 'mock_local_reset_token';
+      } else {
+        return await _apiService.verifyForgotPasswordOtp(phoneNumber, otp);
+      }
+    } catch (e) {
+      print('[Auth] Verify OTP failed: $e');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> resetPasswordWithOtp(String resetToken, String newPassword) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      if (_appMode == 'local') {
+        await Future.delayed(const Duration(milliseconds: 500));
+        return true;
+      } else {
+        await _apiService.resetPasswordWithOtp(resetToken, newPassword);
+        return true;
+      }
+    } catch (e) {
+      print('[Auth] Reset password with OTP failed: $e');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+
   Future<void> logout() async {
     await _localStorageService.clearUserProfile();
     _currentUserId = null;

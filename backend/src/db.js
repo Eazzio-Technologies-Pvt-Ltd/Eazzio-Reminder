@@ -116,6 +116,24 @@ async function initializePostgresTables() {
       )
     `);
 
+    // 5. OTP Verification table
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS otp_verifications (
+        id SERIAL PRIMARY KEY,
+        phone_number TEXT NOT NULL,
+        otp_hash TEXT NOT NULL,
+        purpose TEXT DEFAULT 'FORGOT_PASSWORD',
+        attempts INTEGER DEFAULT 0,
+        verified BOOLEAN DEFAULT FALSE,
+        expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await pgPool.query(`
+      CREATE INDEX IF NOT EXISTS idx_otp_phone_purpose ON otp_verifications (phone_number, purpose);
+    `);
+
     console.log('PostgreSQL database tables initialized successfully.');
   } catch (err) {
     console.error('Error initializing PostgreSQL tables:', err.message);
@@ -235,6 +253,24 @@ function initializeSqliteTables() {
         sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(reminder_id) REFERENCES reminders(id) ON DELETE SET NULL
       )
+    `);
+
+    // 5. OTP Verification table
+    sqliteDb.run(`
+      CREATE TABLE IF NOT EXISTS otp_verifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone_number TEXT NOT NULL,
+        otp_hash TEXT NOT NULL,
+        purpose TEXT DEFAULT 'FORGOT_PASSWORD',
+        attempts INTEGER DEFAULT 0,
+        verified INTEGER DEFAULT 0, -- 0 for false, 1 for true
+        expires_at DATETIME NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    sqliteDb.run(`
+      CREATE INDEX IF NOT EXISTS idx_otp_phone_purpose ON otp_verifications (phone_number, purpose)
     `);
 
     console.log('SQLite database tables initialized successfully with migrations.');

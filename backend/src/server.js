@@ -3,9 +3,12 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const crypto = require('crypto');
-const { dbQuery } = require('./db');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { dbQuery, usePostgres } = require('./db');
 const { initScheduler, checkAndProcessReminders } = require('./scheduler');
 const { sendPasswordResetEmail, sendForgotPasswordEmail } = require('./email');
+const { sendOtpSms } = require('./services/smsService');
 require('dotenv').config();
 
 function formatReminder(reminder) {
@@ -232,7 +235,16 @@ app.post('/api/auth/login', async (req, res) => {
       if (!user) {
         return res.status(404).json({ error: 'No user found with this email or phone number.' });
       }
-      if (user.password && user.password !== password.trim()) {
+      const bcrypt = require('bcryptjs');
+      let passwordMatch = false;
+      if (user.password) {
+        if (user.password.startsWith('$2a$') || user.password.startsWith('$2b$')) {
+          passwordMatch = await bcrypt.compare(password.trim(), user.password);
+        } else {
+          passwordMatch = user.password === password.trim();
+        }
+      }
+      if (!passwordMatch) {
         return res.status(401).json({ error: 'Incorrect password. Please try again.' });
       }
       return res.json(user);
@@ -296,377 +308,252 @@ app.post('/api/auth/signup', async (req, res) => {
   }
 });
 
-// Forgot Password - Send Reset Link endpoint
-app.post('/api/auth/forgot-password', async (req, res) => {
-  const { email } = req.body;
-  if (!email) {
-    return res.status(400).json({ error: 'Email address is required' });
+// Rate limiting maps for OTP requests
+const otpRequestLimits = new Map(); // phone -> Array of timestamps
+const ipRequestLimits = new Map();    // IP -> Array of timestamps
+
+function checkOtpRateLimit(phone) {
+  const now = Date.now();
+  const windowMs = 10 * 60 * 1000; // 10 minutes
+  if (!otpRequestLimits.has(phone)) {
+    otpRequestLimits.set(phone, [now]);
+    return false;
+  }
+  const timestamps = otpRequestLimits.get(phone).filter(ts => now - ts < windowMs);
+  if (timestamps.length >= 3) {
+    return true;
+  }
+  timestamps.push(now);
+  otpRequestLimits.set(phone, timestamps);
+  return false;
+}
+
+function checkIpRateLimit(ip) {
+  const now = Date.now();
+  const windowMs = 10 * 60 * 1000; // 10 minutes
+  if (!ipRequestLimits.has(ip)) {
+    ipRequestLimits.set(ip, [now]);
+    return false;
+  }
+  const timestamps = ipRequestLimits.get(ip).filter(ts => now - ts < windowMs);
+  if (timestamps.length >= 5) { // Limit to 5 per 10 mins per IP
+    return true;
+  }
+  timestamps.push(now);
+  ipRequestLimits.set(ip, timestamps);
+  return false;
+}
+
+// 1. Send OTP for forgot password
+app.post('/api/auth/forgot-password/send-otp', async (req, res) => {
+  const { phoneNumber } = req.body;
+  if (!phoneNumber) {
+    return res.status(400).json({ error: 'Phone number or Email is required' });
+  }
+
+  // Check if identifier contains '@' to determine if it is an email
+  const identifier = phoneNumber.trim();
+  const isEmail = identifier.includes('@');
+
+  let cleanIdentifier = identifier;
+  if (!isEmail) {
+    cleanIdentifier = identifier.replace(/\D/g, '');
+    if (!/^[6-9]\d{9}$/.test(cleanIdentifier)) {
+      return res.status(400).json({ error: 'Invalid 10-digit Indian phone number' });
+    }
+  } else {
+    // Validate email format
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanIdentifier)) {
+      return res.status(400).json({ error: 'Invalid email address format' });
+    }
+  }
+
+  // Rate Limiting Checks
+  const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  if (checkIpRateLimit(clientIp)) {
+    return res.status(429).json({ error: 'Too many requests from this IP. Please try again in 10 minutes.' });
+  }
+  if (checkOtpRateLimit(cleanIdentifier)) {
+    return res.status(429).json({ error: 'Too many OTP requests for this identifier. Please try again in 10 minutes.' });
   }
 
   try {
-    // Look up user by email (case-insensitive)
-    const user = await dbQuery.get(
-      'SELECT * FROM users WHERE LOWER(email) = LOWER(?)',
-      [email.trim()]
-    );
-
-    if (!user) {
-      // Security best practice: return success to prevent email enumeration,
-      // but explicitly notify local logs.
-      console.log(`[Forgot Password] Request for non-existent email: ${email}`);
-      return res.json({ success: true, message: 'If this email exists, a password reset link has been sent.' });
+    // Check if user exists
+    let user;
+    if (isEmail) {
+      user = await dbQuery.get('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', [cleanIdentifier]);
+    } else {
+      user = await dbQuery.get('SELECT * FROM users WHERE phone = ?', [cleanIdentifier]);
     }
 
-    // Generate token and expiry (15 mins)
-    const token = crypto.randomBytes(20).toString('hex');
-    const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    if (!user) {
+      // Security best practice: return success message so we don't leak whether identifier is registered
+      return res.json({ success: true, message: 'OTP sent to registered account' });
+    }
 
-    // Save token in DB
+    // Generate random 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Hash OTP using bcrypt before storing
+    const salt = await bcrypt.genSalt(10);
+    const otpHash = await bcrypt.hash(otp, salt);
+
+    // Create OtpVerification record: expiresAt = now + 5 minutes
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
     await dbQuery.run(
-      'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?',
-      [token, expires, user.id]
+      'INSERT INTO otp_verifications (phone_number, otp_hash, purpose, expires_at) VALUES (?, ?, ?, ?)',
+      [cleanIdentifier.toLowerCase(), otpHash, 'FORGOT_PASSWORD', expiresAt]
     );
 
-    // Build reset link
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    const host = req.get('host');
-    const resetLink = `${protocol}://${host}/api/auth/reset-password-page?token=${token}`;
+    if (isEmail) {
+      // Send OTP via Email SMTP
+      const { sendOtpEmail } = require('./email');
+      await sendOtpEmail(user.email, user.name, otp);
+    } else {
+      // Send OTP via MSG91 SMS
+      const smsResult = await sendOtpSms(cleanIdentifier, otp);
+      if (!smsResult.success) {
+        console.error('[Forgot Password SMS] Failed to send SMS:', smsResult.error);
+        if (!smsResult.mocked) {
+          return res.status(500).json({ error: 'Failed to send OTP SMS. Please try again later.' });
+        }
+      }
+    }
 
-    // Send email via Brevo SMTP
-    await sendForgotPasswordEmail(user.email, user.name, resetLink);
-
-    res.json({ success: true, message: 'Password reset link sent successfully.' });
+    res.json({ success: true, message: 'OTP sent successfully' });
   } catch (err) {
-    console.error('[Forgot Password] Error:', err);
+    console.error('[Forgot Password Send OTP] Error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Serve Password Reset Web Page
-app.get('/api/auth/reset-password-page', async (req, res) => {
-  const { token } = req.query;
-  if (!token) {
-    return res.send(getInvalidTokenHtml());
+// 2. Verify OTP
+app.post('/api/auth/forgot-password/verify-otp', async (req, res) => {
+  const { phoneNumber, otp } = req.body;
+  if (!phoneNumber || !otp) {
+    return res.status(400).json({ error: 'Identifier and OTP are required' });
   }
+
+  const identifier = phoneNumber.trim();
+  const isEmail = identifier.includes('@');
+  const cleanIdentifier = isEmail ? identifier.toLowerCase() : identifier.replace(/\D/g, '');
 
   try {
-    const user = await dbQuery.get(
-      'SELECT * FROM users WHERE reset_token = ?',
-      [token]
+    // Fetch latest unverified OtpVerification
+    const otpRecord = await dbQuery.get(
+      'SELECT * FROM otp_verifications WHERE phone_number = ? AND purpose = ? AND (verified = FALSE OR verified = 0) ORDER BY created_at DESC LIMIT 1',
+      [cleanIdentifier, 'FORGOT_PASSWORD']
     );
 
-    if (!user || !user.reset_token_expires || new Date(user.reset_token_expires) < new Date()) {
-      return res.send(getInvalidTokenHtml());
+    if (!otpRecord) {
+      return res.status(400).json({ error: 'No active OTP request found. Please request a new one.' });
     }
 
-    res.send(getResetPasswordPageHtml(token));
-  } catch (err) {
-    console.error('[Reset Password Page] Error:', err);
-    res.send(getInvalidTokenHtml());
-  }
-});
-
-// Handle Password Reset Form Submission
-app.post('/api/auth/reset-password-confirm', async (req, res) => {
-  const { token, newPassword } = req.body;
-  if (!token || !newPassword) {
-    return res.send(getInvalidTokenHtml());
-  }
-
-  try {
-    const user = await dbQuery.get(
-      'SELECT * FROM users WHERE reset_token = ?',
-      [token]
-    );
-
-    if (!user || !user.reset_token_expires || new Date(user.reset_token_expires) < new Date()) {
-      return res.send(getInvalidTokenHtml());
+    // Check expiry
+    if (new Date(otpRecord.expires_at) < new Date()) {
+      return res.status(400).json({ error: 'OTP expired, request a new one' });
     }
 
-    // Update password, clear reset token
+    // Check attempts limit (max 5)
+    if (otpRecord.attempts >= 5) {
+      return res.status(400).json({ error: 'Maximum verification attempts exceeded. Please request a new OTP.' });
+    }
+
+    // Compare bcrypt hash
+    const isMatch = await bcrypt.compare(otp.trim(), otpRecord.otp_hash);
+    if (!isMatch) {
+      // Increment attempts
+      await dbQuery.run(
+        'UPDATE otp_verifications SET attempts = attempts + 1 WHERE id = ?',
+        [otpRecord.id]
+      );
+      return res.status(400).json({ error: 'Invalid OTP' });
+    }
+
+    // Mark verified = true
     await dbQuery.run(
-      'UPDATE users SET password = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?',
-      [newPassword.trim(), user.id]
+      'UPDATE otp_verifications SET verified = ? WHERE id = ?',
+      [usePostgres ? true : 1, otpRecord.id]
     );
 
-    res.send(getSuccessHtml());
+    // Generate short-lived JWT resetToken (payload: phoneNumber, purpose), expiresIn: 10m
+    const resetToken = jwt.sign(
+      { phoneNumber: cleanIdentifier, purpose: 'RESET_PASSWORD' },
+      process.env.JWT_SECRET || 'fallback_secret_key_eazzio',
+      { expiresIn: '10m' }
+    );
+
+    res.json({ success: true, resetToken });
   } catch (err) {
-    console.error('[Reset Password Confirm] Error:', err);
-    res.send(getInvalidTokenHtml());
+    console.error('[Forgot Password Verify OTP] Error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// HTML Page Generators for Forgot Password Web Flow
-function getResetPasswordPageHtml(token) {
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Reset Password - Eazzio Reminder</title>
-  <style>
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(135deg, #F4F5FC 0%, #E8E7F3 100%);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0;
-      padding: 20px;
-    }
-    .card {
-      background: rgba(255, 255, 255, 0.95);
-      border-radius: 24px;
-      box-shadow: 0 12px 40px rgba(124, 58, 237, 0.08);
-      border: 1px solid #EEEDF8;
-      width: 100%;
-      max-width: 440px;
-      padding: 40px 32px;
-      box-sizing: border-box;
-    }
-    .header {
-      text-align: center;
-      margin-bottom: 32px;
-    }
-    .header h1 {
-      color: #1E1B4B;
-      font-size: 24px;
-      font-weight: 800;
-      margin: 0;
-    }
-    .header p {
-      color: #6E6893;
-      font-size: 13px;
-      margin-top: 8px;
-      line-height: 1.4;
-    }
-    .form-group {
-      margin-bottom: 20px;
-    }
-    .form-group label {
-      display: block;
-      color: #1E1B4B;
-      font-weight: 600;
-      font-size: 13px;
-      margin-bottom: 8px;
-    }
-    .form-group input {
-      width: 100%;
-      padding: 14px 16px;
-      box-sizing: border-box;
-      border: 1.5px solid #E5E3F5;
-      background-color: #F9F8FD;
-      border-radius: 12px;
-      color: #1E1B4B;
-      font-size: 14px;
-      outline: none;
-      transition: all 0.2s;
-    }
-    .form-group input:focus {
-      border-color: #7C3AED;
-      background-color: #ffffff;
-      box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
-    }
-    .btn {
-      width: 100%;
-      background: linear-gradient(135deg, #7C3AED 0%, #8B5CF6 100%);
-      color: white;
-      border: none;
-      padding: 16px;
-      border-radius: 12px;
-      font-weight: 700;
-      font-size: 15px;
-      cursor: pointer;
-      box-shadow: 0 6px 16px rgba(124, 58, 237, 0.25);
-      transition: all 0.2s;
-      margin-top: 10px;
-    }
-    .btn:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 8px 20px rgba(124, 58, 237, 0.35);
-    }
-    .error-msg {
-      background-color: #FFF5F5;
-      border: 1px solid #FEE2E2;
-      color: #EF4444;
-      padding: 12px 16px;
-      border-radius: 12px;
-      font-size: 13px;
-      margin-bottom: 24px;
-      display: none;
-      line-height: 1.4;
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="header">
-      <h1>Reset Your Password</h1>
-      <p>Please enter your new password below to update your Eazzio Reminder credentials.</p>
-    </div>
-    
-    <div class="error-msg" id="errorBlock"></div>
+// 3. Reset Password using token
+app.post('/api/auth/forgot-password/reset', async (req, res) => {
+  const { resetToken, newPassword } = req.body;
+  if (!resetToken || !newPassword) {
+    return res.status(400).json({ error: 'Reset token and new password are required' });
+  }
 
-    <form action="/api/auth/reset-password-confirm" method="POST" onsubmit="return validateForm()">
-      <input type="hidden" name="token" value="${token}">
-      
-      <div class="form-group">
-        <label for="newPassword">New Password</label>
-        <input type="password" id="newPassword" name="newPassword" required minlength="6" placeholder="At least 6 characters">
-      </div>
-      
-      <div class="form-group">
-        <label for="confirmPassword">Confirm Password</label>
-        <input type="password" id="confirmPassword" required placeholder="Re-enter your password">
-      </div>
-      
-      <button type="submit" class="btn">Update Password</button>
-    </form>
-  </div>
+  // Password strength check (min 8 chars)
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+  }
 
-  <script>
-    function validateForm() {
-      const newPwd = document.getElementById('newPassword').value;
-      const confirmPwd = document.getElementById('confirmPassword').value;
-      const errorBlock = document.getElementById('errorBlock');
-      
-      if (newPwd !== confirmPwd) {
-        errorBlock.innerText = "Passwords do not match. Please re-type them.";
-        errorBlock.style.display = 'block';
-        return false;
-      }
-      errorBlock.style.display = 'none';
-      return true;
+  try {
+    // Verify JWT resetToken
+    let decoded;
+    try {
+      decoded = jwt.verify(resetToken, process.env.JWT_SECRET || 'fallback_secret_key_eazzio');
+    } catch (err) {
+      return res.status(401).json({ error: 'Invalid or expired reset token' });
     }
-  </script>
-</body>
-</html>
-  `;
-}
 
-function getSuccessHtml() {
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Password Updated - Eazzio Reminder</title>
-  <style>
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(135deg, #F4F5FC 0%, #E8E7F3 100%);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0;
-      padding: 20px;
+    if (decoded.purpose !== 'RESET_PASSWORD' || !decoded.phoneNumber) {
+      return res.status(400).json({ error: 'Invalid token purpose' });
     }
-    .card {
-      background: rgba(255, 255, 255, 0.95);
-      border-radius: 24px;
-      box-shadow: 0 12px 40px rgba(124, 58, 237, 0.08);
-      border: 1px solid #EEEDF8;
-      width: 100%;
-      max-width: 440px;
-      padding: 40px 32px;
-      box-sizing: border-box;
-      text-align: center;
-    }
-    .icon {
-      font-size: 48px;
-      color: #10B981;
-      margin-bottom: 20px;
-      line-height: 1;
-    }
-    .card h1 {
-      color: #1E1B4B;
-      font-size: 24px;
-      font-weight: 800;
-      margin: 0;
-    }
-    .card p {
-      color: #6E6893;
-      font-size: 14px;
-      margin-top: 12px;
-      line-height: 1.5;
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="icon">✓</div>
-    <h1>Password Updated</h1>
-    <p>Your password has been reset successfully. You can now return to the Eazzio Reminder app and sign in with your new password.</p>
-  </div>
-</body>
-</html>
-  `;
-}
 
-function getInvalidTokenHtml() {
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Invalid Link - Eazzio Reminder</title>
-  <style>
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(135deg, #F4F5FC 0%, #E8E7F3 100%);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0;
-      padding: 20px;
+    const identifier = decoded.phoneNumber;
+    const isEmail = identifier.includes('@');
+
+    // Find user by phone or email
+    let user;
+    if (isEmail) {
+      user = await dbQuery.get('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', [identifier]);
+    } else {
+      user = await dbQuery.get('SELECT * FROM users WHERE phone = ?', [identifier]);
     }
-    .card {
-      background: rgba(255, 255, 255, 0.95);
-      border-radius: 24px;
-      box-shadow: 0 12px 40px rgba(124, 58, 237, 0.08);
-      border: 1px solid #EEEDF8;
-      width: 100%;
-      max-width: 440px;
-      padding: 40px 32px;
-      box-sizing: border-box;
-      text-align: center;
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
     }
-    .icon {
-      font-size: 48px;
-      color: #EF4444;
-      margin-bottom: 20px;
-      line-height: 1;
-    }
-    .card h1 {
-      color: #1E1B4B;
-      font-size: 24px;
-      font-weight: 800;
-      margin: 0;
-    }
-    .card p {
-      color: #6E6893;
-      font-size: 14px;
-      margin-top: 12px;
-      line-height: 1.5;
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="icon">✗</div>
-    <h1>Reset Link Invalid</h1>
-    <p>This password reset link is invalid, expired, or has already been used. Please request a new link from the app.</p>
-  </div>
-</body>
-</html>
-  `;
-}
+
+    // Hash newPassword with bcrypt
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword.trim(), salt);
+
+    // Update user record
+    await dbQuery.run(
+      'UPDATE users SET password = ? WHERE id = ?',
+      [hashedPassword, user.id]
+    );
+
+    // Delete/invalidate the used OtpVerification records for this phone number
+    await dbQuery.run(
+      'DELETE FROM otp_verifications WHERE phone_number = ?',
+      [identifier]
+    );
+
+    res.json({ success: true, message: 'Password reset successful' });
+  } catch (err) {
+    console.error('[Forgot Password Reset] Error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
 
 // Search users
 app.get('/api/users/search', async (req, res) => {

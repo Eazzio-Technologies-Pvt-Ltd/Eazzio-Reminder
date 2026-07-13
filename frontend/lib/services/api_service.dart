@@ -171,6 +171,48 @@ class ApiService {
     }
   }
 
+  // Send OTP for forgot password
+  Future<void> sendForgotPasswordOtp(String phoneNumber) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/forgot-password/send-otp'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'phoneNumber': phoneNumber}),
+    );
+    if (response.statusCode != 200) {
+      final body = jsonDecode(response.body);
+      throw Exception(body['error'] ?? 'Failed to send OTP');
+    }
+  }
+
+  // Verify OTP for forgot password and return reset token
+  Future<String> verifyForgotPasswordOtp(String phoneNumber, String otp) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/forgot-password/verify-otp'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'phoneNumber': phoneNumber, 'otp': otp}),
+    );
+    final body = jsonDecode(response.body);
+    if (response.statusCode == 200) {
+      return body['resetToken'] as String;
+    } else {
+      throw Exception(body['error'] ?? 'OTP verification failed');
+    }
+  }
+
+  // Reset password using reset token
+  Future<void> resetPasswordWithOtp(String resetToken, String newPassword) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/forgot-password/reset'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'resetToken': resetToken, 'newPassword': newPassword}),
+    );
+    if (response.statusCode != 200) {
+      final body = jsonDecode(response.body);
+      throw Exception(body['error'] ?? 'Password reset failed');
+    }
+  }
+
+
 
 
   // Search users
