@@ -58,6 +58,14 @@ async function initializePostgresTables() {
       )
     `);
 
+    await pgPool.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token TEXT;
+    `);
+
+    await pgPool.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMP WITH TIME ZONE;
+    `);
+
     // 2. Team Requests table
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS team_requests (
@@ -131,6 +139,18 @@ function initializeSqliteTables() {
     sqliteDb.run("ALTER TABLE users ADD COLUMN password TEXT", (err) => {
       if (err && !err.message.includes('duplicate column name')) {
         console.error('Migration error adding password:', err.message);
+      }
+    });
+
+    sqliteDb.run("ALTER TABLE users ADD COLUMN reset_token TEXT", (err) => {
+      if (err && !err.message.includes('duplicate column name')) {
+        console.error('Migration error adding reset_token:', err.message);
+      }
+    });
+
+    sqliteDb.run("ALTER TABLE users ADD COLUMN reset_token_expires DATETIME", (err) => {
+      if (err && !err.message.includes('duplicate column name')) {
+        console.error('Migration error adding reset_token_expires:', err.message);
       }
     });
 

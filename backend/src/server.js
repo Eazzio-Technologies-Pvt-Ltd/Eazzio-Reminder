@@ -2,9 +2,10 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const crypto = require('crypto');
 const { dbQuery } = require('./db');
 const { initScheduler, checkAndProcessReminders } = require('./scheduler');
-const { sendPasswordResetEmail } = require('./email');
+const { sendPasswordResetEmail, sendForgotPasswordEmail } = require('./email');
 require('dotenv').config();
 
 function formatReminder(reminder) {
@@ -295,50 +296,377 @@ app.post('/api/auth/signup', async (req, res) => {
   }
 });
 
-// Reset Password endpoint
-app.post('/api/auth/reset-password', async (req, res) => {
-  const { identifier, name, newPassword } = req.body;
-  if (!identifier || !name || !newPassword) {
-    return res.status(400).json({ error: 'Identifier, name, and new password are required' });
+// Forgot Password - Send Reset Link endpoint
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: 'Email address is required' });
   }
 
   try {
-    // Look up user by email or phone, and matching name (case-insensitive)
+    // Look up user by email (case-insensitive)
     const user = await dbQuery.get(
-      'SELECT * FROM users WHERE (email = ? OR phone = ?) AND LOWER(name) = LOWER(?)',
-      [identifier.trim(), identifier.trim(), name.trim()]
+      'SELECT * FROM users WHERE LOWER(email) = LOWER(?)',
+      [email.trim()]
     );
 
     if (!user) {
-      return res.status(404).json({ error: 'User account details do not match' });
+      // Security best practice: return success to prevent email enumeration,
+      // but explicitly notify local logs.
+      console.log(`[Forgot Password] Request for non-existent email: ${email}`);
+      return res.json({ success: true, message: 'If this email exists, a password reset link has been sent.' });
     }
 
-    // Update password
+    // Generate token and expiry (15 mins)
+    const token = crypto.randomBytes(20).toString('hex');
+    const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+    // Save token in DB
     await dbQuery.run(
-      'UPDATE users SET password = ? WHERE id = ?',
-      [newPassword.trim(), user.id]
+      'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?',
+      [token, expires, user.id]
     );
 
-    // Send confirmation email via Brevo SMTP
-    let targetEmail = user.email;
-    if (!targetEmail && identifier.trim().toLowerCase().includes('@')) {
-      targetEmail = identifier.trim().toLowerCase();
-    }
+    // Build reset link
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.get('host');
+    const resetLink = `${protocol}://${host}/api/auth/reset-password-page?token=${token}`;
 
-    if (targetEmail) {
-      try {
-        await sendPasswordResetEmail(targetEmail, user.name, newPassword.trim());
-      } catch (emailErr) {
-        console.error(`[SMTP] Failed to send password reset email to ${targetEmail}:`, emailErr);
-      }
-    }
+    // Send email via Brevo SMTP
+    await sendForgotPasswordEmail(user.email, user.name, resetLink);
 
-    res.json({ success: true, message: 'Password reset successfully' });
+    res.json({ success: true, message: 'Password reset link sent successfully.' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[Forgot Password] Error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
+// Serve Password Reset Web Page
+app.get('/api/auth/reset-password-page', async (req, res) => {
+  const { token } = req.query;
+  if (!token) {
+    return res.send(getInvalidTokenHtml());
+  }
+
+  try {
+    const user = await dbQuery.get(
+      'SELECT * FROM users WHERE reset_token = ?',
+      [token]
+    );
+
+    if (!user || !user.reset_token_expires || new Date(user.reset_token_expires) < new Date()) {
+      return res.send(getInvalidTokenHtml());
+    }
+
+    res.send(getResetPasswordPageHtml(token));
+  } catch (err) {
+    console.error('[Reset Password Page] Error:', err);
+    res.send(getInvalidTokenHtml());
+  }
+});
+
+// Handle Password Reset Form Submission
+app.post('/api/auth/reset-password-confirm', async (req, res) => {
+  const { token, newPassword } = req.body;
+  if (!token || !newPassword) {
+    return res.send(getInvalidTokenHtml());
+  }
+
+  try {
+    const user = await dbQuery.get(
+      'SELECT * FROM users WHERE reset_token = ?',
+      [token]
+    );
+
+    if (!user || !user.reset_token_expires || new Date(user.reset_token_expires) < new Date()) {
+      return res.send(getInvalidTokenHtml());
+    }
+
+    // Update password, clear reset token
+    await dbQuery.run(
+      'UPDATE users SET password = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?',
+      [newPassword.trim(), user.id]
+    );
+
+    res.send(getSuccessHtml());
+  } catch (err) {
+    console.error('[Reset Password Confirm] Error:', err);
+    res.send(getInvalidTokenHtml());
+  }
+});
+
+// HTML Page Generators for Forgot Password Web Flow
+function getResetPasswordPageHtml(token) {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reset Password - Eazzio Reminder</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #F4F5FC 0%, #E8E7F3 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0;
+      padding: 20px;
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 24px;
+      box-shadow: 0 12px 40px rgba(124, 58, 237, 0.08);
+      border: 1px solid #EEEDF8;
+      width: 100%;
+      max-width: 440px;
+      padding: 40px 32px;
+      box-sizing: border-box;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .header h1 {
+      color: #1E1B4B;
+      font-size: 24px;
+      font-weight: 800;
+      margin: 0;
+    }
+    .header p {
+      color: #6E6893;
+      font-size: 13px;
+      margin-top: 8px;
+      line-height: 1.4;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-group label {
+      display: block;
+      color: #1E1B4B;
+      font-weight: 600;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 14px 16px;
+      box-sizing: border-box;
+      border: 1.5px solid #E5E3F5;
+      background-color: #F9F8FD;
+      border-radius: 12px;
+      color: #1E1B4B;
+      font-size: 14px;
+      outline: none;
+      transition: all 0.2s;
+    }
+    .form-group input:focus {
+      border-color: #7C3AED;
+      background-color: #ffffff;
+      box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+    }
+    .btn {
+      width: 100%;
+      background: linear-gradient(135deg, #7C3AED 0%, #8B5CF6 100%);
+      color: white;
+      border: none;
+      padding: 16px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 15px;
+      cursor: pointer;
+      box-shadow: 0 6px 16px rgba(124, 58, 237, 0.25);
+      transition: all 0.2s;
+      margin-top: 10px;
+    }
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 20px rgba(124, 58, 237, 0.35);
+    }
+    .error-msg {
+      background-color: #FFF5F5;
+      border: 1px solid #FEE2E2;
+      color: #EF4444;
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 13px;
+      margin-bottom: 24px;
+      display: none;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>Reset Your Password</h1>
+      <p>Please enter your new password below to update your Eazzio Reminder credentials.</p>
+    </div>
+    
+    <div class="error-msg" id="errorBlock"></div>
+
+    <form action="/api/auth/reset-password-confirm" method="POST" onsubmit="return validateForm()">
+      <input type="hidden" name="token" value="${token}">
+      
+      <div class="form-group">
+        <label for="newPassword">New Password</label>
+        <input type="password" id="newPassword" name="newPassword" required minlength="6" placeholder="At least 6 characters">
+      </div>
+      
+      <div class="form-group">
+        <label for="confirmPassword">Confirm Password</label>
+        <input type="password" id="confirmPassword" required placeholder="Re-enter your password">
+      </div>
+      
+      <button type="submit" class="btn">Update Password</button>
+    </form>
+  </div>
+
+  <script>
+    function validateForm() {
+      const newPwd = document.getElementById('newPassword').value;
+      const confirmPwd = document.getElementById('confirmPassword').value;
+      const errorBlock = document.getElementById('errorBlock');
+      
+      if (newPwd !== confirmPwd) {
+        errorBlock.innerText = "Passwords do not match. Please re-type them.";
+        errorBlock.style.display = 'block';
+        return false;
+      }
+      errorBlock.style.display = 'none';
+      return true;
+    }
+  </script>
+</body>
+</html>
+  `;
+}
+
+function getSuccessHtml() {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Password Updated - Eazzio Reminder</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #F4F5FC 0%, #E8E7F3 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0;
+      padding: 20px;
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 24px;
+      box-shadow: 0 12px 40px rgba(124, 58, 237, 0.08);
+      border: 1px solid #EEEDF8;
+      width: 100%;
+      max-width: 440px;
+      padding: 40px 32px;
+      box-sizing: border-box;
+      text-align: center;
+    }
+    .icon {
+      font-size: 48px;
+      color: #10B981;
+      margin-bottom: 20px;
+      line-height: 1;
+    }
+    .card h1 {
+      color: #1E1B4B;
+      font-size: 24px;
+      font-weight: 800;
+      margin: 0;
+    }
+    .card p {
+      color: #6E6893;
+      font-size: 14px;
+      margin-top: 12px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">✓</div>
+    <h1>Password Updated</h1>
+    <p>Your password has been reset successfully. You can now return to the Eazzio Reminder app and sign in with your new password.</p>
+  </div>
+</body>
+</html>
+  `;
+}
+
+function getInvalidTokenHtml() {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Invalid Link - Eazzio Reminder</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #F4F5FC 0%, #E8E7F3 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0;
+      padding: 20px;
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 24px;
+      box-shadow: 0 12px 40px rgba(124, 58, 237, 0.08);
+      border: 1px solid #EEEDF8;
+      width: 100%;
+      max-width: 440px;
+      padding: 40px 32px;
+      box-sizing: border-box;
+      text-align: center;
+    }
+    .icon {
+      font-size: 48px;
+      color: #EF4444;
+      margin-bottom: 20px;
+      line-height: 1;
+    }
+    .card h1 {
+      color: #1E1B4B;
+      font-size: 24px;
+      font-weight: 800;
+      margin: 0;
+    }
+    .card p {
+      color: #6E6893;
+      font-size: 14px;
+      margin-top: 12px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">✗</div>
+    <h1>Reset Link Invalid</h1>
+    <p>This password reset link is invalid, expired, or has already been used. Please request a new link from the app.</p>
+  </div>
+</body>
+</html>
+  `;
+}
 
 // Search users
 app.get('/api/users/search', async (req, res) => {

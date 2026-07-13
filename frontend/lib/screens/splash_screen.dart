@@ -216,12 +216,6 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                           letterSpacing: 0.5,
                         ),
                       ),
-                      const Text(
-                        '❤️',
-                        style: TextStyle(
-                          fontSize: 14,
-                        ),
-                      ),
                       Text(
                         ' eazzio technology private limited',
                         style: TextStyle(

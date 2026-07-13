@@ -731,9 +731,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _showForgotPasswordDialog() {
-    final emailPhoneController = TextEditingController();
-    final nameConfirmController = TextEditingController();
-    final newPasswordController = TextEditingController();
+    final emailController = TextEditingController();
     final dialogKey = GlobalKey<FormState>();
 
     showDialog(
@@ -761,39 +759,23 @@ class _LoginScreenState extends State<LoginScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         const Text(
-                          'Confirm your account details below to reset your password.',
-                          style: TextStyle(fontSize: 12, color: Colors.black54),
+                          'Enter your registered Gmail address below and we will send you a password reset link.',
+                          style: TextStyle(fontSize: 13, color: Colors.black54, height: 1.4),
                         ),
                         const SizedBox(height: 16),
                         TextFormField(
-                          controller: emailPhoneController,
+                          controller: emailController,
+                          keyboardType: TextInputType.emailAddress,
                           style: const TextStyle(color: Colors.black87),
                           decoration: const InputDecoration(
-                            labelText: 'Phone or Email Address',
+                            labelText: 'Gmail / Email Address',
                             prefixIcon: Icon(Icons.mail_outline, size: 20),
                           ),
-                          validator: (value) => value == null || value.trim().isEmpty ? 'Required field' : null,
-                        ),
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          controller: nameConfirmController,
-                          style: const TextStyle(color: Colors.black87),
-                          decoration: const InputDecoration(
-                            labelText: 'Your Account Name',
-                            prefixIcon: Icon(Icons.person_outline, size: 20),
-                          ),
-                          validator: (value) => value == null || value.trim().isEmpty ? 'Required field' : null,
-                        ),
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          controller: newPasswordController,
-                          obscureText: true,
-                          style: const TextStyle(color: Colors.black87),
-                          decoration: const InputDecoration(
-                            labelText: 'New Password',
-                            prefixIcon: Icon(Icons.vpn_key_outlined, size: 20),
-                          ),
-                          validator: (value) => value == null || value.trim().length < 4 ? 'Must be at least 4 characters' : null,
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) return 'Please enter your email';
+                            if (!value.contains('@')) return 'Please enter a valid email address';
+                            return null;
+                          },
                         ),
                       ],
                     ),
@@ -813,16 +795,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       if (!dialogKey.currentState!.validate()) return;
                       
                       final provider = Provider.of<ReminderProvider>(context, listen: false);
-                      final success = await provider.resetPassword(
-                        identifier: emailPhoneController.text.trim(),
-                        name: nameConfirmController.text.trim(),
-                        newPassword: newPasswordController.text.trim(),
+                      final success = await provider.forgotPassword(
+                        emailController.text.trim(),
                       );
   
                       if (success) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('Password reset successfully! Please sign in with your new password.'),
+                            content: Text('Password reset link sent! Please check your email inbox.'),
                             backgroundColor: AppTheme.success,
                           ),
                         );
@@ -830,13 +810,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       } else {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('Invalid account details. Please check your name and email/phone.'),
-                            backgroundColor: AppTheme.warning,
+                            content: Text('Failed to request reset link. Please check your network connection.'),
+                            backgroundColor: AppTheme.danger,
                           ),
                         );
                       }
                     },
-                    child: const Text('Reset', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    child: const Text('Send Link', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   ),
                 ],
               );

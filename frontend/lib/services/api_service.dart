@@ -158,18 +158,19 @@ class ApiService {
     }
   }
 
-  // Reset Password
-  Future<void> resetPassword(String identifier, String name, String newPassword) async {
+  // Forgot Password (Request Reset Link)
+  Future<void> forgotPassword(String email) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/auth/reset-password'),
+      Uri.parse('$baseUrl/auth/forgot-password'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'identifier': identifier, 'name': name, 'newPassword': newPassword}),
+      body: jsonEncode({'email': email}),
     );
     if (response.statusCode != 200) {
       final body = jsonDecode(response.body);
-      throw Exception(body['error'] ?? 'Reset password failed');
+      throw Exception(body['error'] ?? 'Request failed');
     }
   }
+
 
 
   // Search users

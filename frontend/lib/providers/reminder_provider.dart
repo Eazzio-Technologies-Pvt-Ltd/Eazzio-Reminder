@@ -364,31 +364,17 @@ class ReminderProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> resetPassword({
-    required String identifier,
-    required String name,
-    required String newPassword,
-  }) async {
+  Future<bool> forgotPassword(String email) async {
     try {
       if (_appMode == 'local') {
-        final profile = await _localStorageService.getUserProfile();
-        if (profile != null) {
-          final localName = profile['name'] as String;
-          final localPhone = profile['phone'] as String?;
-          final localEmail = profile['email'] as String?;
-          
-          if (localName.toLowerCase() == name.toLowerCase() && 
-              (localPhone == identifier || localEmail == identifier)) {
-            return true;
-          }
-        }
-        return false;
+        await Future.delayed(const Duration(milliseconds: 500));
+        return true;
       } else {
-        await _apiService.resetPassword(identifier, name, newPassword);
+        await _apiService.forgotPassword(email);
         return true;
       }
     } catch (e) {
-      print('[Auth] Reset password failed: $e');
+      print('[Auth] Forgot password request failed: $e');
       return false;
     }
   }
