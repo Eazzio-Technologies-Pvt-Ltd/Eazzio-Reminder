@@ -74,7 +74,7 @@ class ReminderProvider extends ChangeNotifier {
 
     // 1. Load settings from Local Storage
     _appMode = 'server'; // Always in server mode
-    _apiBaseUrl = await _localStorageService.getApiBaseUrl();
+    _apiBaseUrl = 'https://eazzio-reminder.onrender.com/api';
     _themeModeStr = await _localStorageService.getThemeMode();
     _defaultCountryCode = await _localStorageService.getDefaultCountryCode();
 
