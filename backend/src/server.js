@@ -8,7 +8,6 @@ const jwt = require('jsonwebtoken');
 const { dbQuery, usePostgres } = require('./db');
 const { initScheduler, checkAndProcessReminders } = require('./scheduler');
 const { sendPasswordResetEmail, sendForgotPasswordEmail } = require('./email');
-const { sendOtpSms } = require('./services/smsService');
 require('dotenv').config();
 
 function formatReminder(reminder) {
