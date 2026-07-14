@@ -13,22 +13,38 @@ require('dotenv').config();
 
 function formatReminder(reminder) {
   if (!reminder) return reminder;
-  if (reminder.created_at && !reminder.created_at.endsWith('Z')) {
-    return {
-      ...reminder,
-      created_at: `${reminder.created_at.replace(' ', 'T')}Z`
-    };
+  if (reminder.created_at) {
+    if (typeof reminder.created_at.toISOString === 'function') {
+      return {
+        ...reminder,
+        created_at: reminder.created_at.toISOString()
+      };
+    }
+    if (typeof reminder.created_at === 'string' && !reminder.created_at.endsWith('Z')) {
+      return {
+        ...reminder,
+        created_at: `${reminder.created_at.replace(' ', 'T')}Z`
+      };
+    }
   }
   return reminder;
 }
 
 function formatLog(log) {
   if (!log) return log;
-  if (log.sent_at && !log.sent_at.endsWith('Z')) {
-    return {
-      ...log,
-      sent_at: `${log.sent_at.replace(' ', 'T')}Z`
-    };
+  if (log.sent_at) {
+    if (typeof log.sent_at.toISOString === 'function') {
+      return {
+        ...log,
+        sent_at: log.sent_at.toISOString()
+      };
+    }
+    if (typeof log.sent_at === 'string' && !log.sent_at.endsWith('Z')) {
+      return {
+        ...log,
+        sent_at: `${log.sent_at.replace(' ', 'T')}Z`
+      };
+    }
   }
   return log;
 }

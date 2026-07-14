@@ -51,11 +51,19 @@ function calculateNextDate(currentDateStr, repeatOption) {
 
 function formatReminder(reminder) {
   if (!reminder) return reminder;
-  if (reminder.created_at && !reminder.created_at.endsWith('Z')) {
-    return {
-      ...reminder,
-      created_at: `${reminder.created_at.replace(' ', 'T')}Z`
-    };
+  if (reminder.created_at) {
+    if (typeof reminder.created_at.toISOString === 'function') {
+      return {
+        ...reminder,
+        created_at: reminder.created_at.toISOString()
+      };
+    }
+    if (typeof reminder.created_at === 'string' && !reminder.created_at.endsWith('Z')) {
+      return {
+        ...reminder,
+        created_at: `${reminder.created_at.replace(' ', 'T')}Z`
+      };
+    }
   }
   return reminder;
 }
