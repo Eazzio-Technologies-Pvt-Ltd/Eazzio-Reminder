@@ -72,20 +72,45 @@ function formatReminder(reminder) {
  * Main routine to query database for reminders that are due.
  */
 async function checkAndProcessReminders() {
-  const now = new Date();
-  
-  // Format Date as YYYY-MM-DD
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const currentDateStr = `${year}-${month}-${day}`;
+  const tz = process.env.APP_TIMEZONE || 'Asia/Kolkata';
+  let currentDateStr, currentTimeStr;
 
-  // Format Time as HH:MM
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  const currentTimeStr = `${hours}:${minutes}`;
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    
+    const parts = formatter.formatToParts(new Date());
+    const partMap = {};
+    for (const part of parts) {
+      partMap[part.type] = part.value;
+    }
+    
+    currentDateStr = `${partMap.year}-${partMap.month}-${partMap.day}`;
+    let hourVal = partMap.hour;
+    if (hourVal === '24') {
+      hourVal = '00';
+    }
+    currentTimeStr = `${hourVal}:${partMap.minute}`;
+  } catch (err) {
+    console.error(`[Scheduler] Invalid/unsupported timezone ${tz}, falling back to local system timezone:`, err.message);
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    currentDateStr = `${year}-${month}-${day}`;
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    currentTimeStr = `${hours}:${minutes}`;
+  }
 
-  console.log(`[Scheduler] Checking date: ${currentDateStr}, time <= ${currentTimeStr}`);
+  console.log(`[Scheduler] Checking date: ${currentDateStr}, time <= ${currentTimeStr} (Timezone: ${tz})`);
 
   // Query reminders that:
   // 1. Are scheduled
