@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../models/reminder.dart';
@@ -19,13 +20,16 @@ class _ReminderFormState extends State<ReminderForm> {
   
   late TextEditingController _titleTextController;
   late TextEditingController _nameTextController;
-  late TextEditingController _phoneController;
+  late TextEditingController _smsPhoneController;
+  late TextEditingController _whatsappPhoneController;
   late TextEditingController _msgController;
 
   String _eventType = 'task';
   DateTime _remindDate = DateTime.now();
   TimeOfDay _remindTime = TimeOfDay.now();
-  String _reminderType = 'sms';
+  bool _enableRingtone = true;
+  bool _enableSms = false;
+  bool _enableWhatsApp = false;
   String _sendOption = 'auto';
   String _notificationSound = 'default';
   String _repeatOption = 'none';
@@ -61,20 +65,18 @@ class _ReminderFormState extends State<ReminderForm> {
     _titleTextController = TextEditingController(text: widget.reminder?.title ?? '');
     _nameTextController = TextEditingController(text: widget.reminder?.recipientName ?? '');
     
-    // Pre-populate country code if this is a new reminder and it is not empty
     final provider = Provider.of<ReminderProvider>(context, listen: false);
-    String initialPhone = widget.reminder?.recipientPhone ?? '';
-    if (initialPhone.isEmpty && provider.defaultCountryCode.isNotEmpty) {
-      initialPhone = provider.defaultCountryCode;
-    }
-    _phoneController = TextEditingController(text: initialPhone);
-    
-    _msgController = TextEditingController(text: widget.reminder?.messageTemplate ?? '');
+    String initialSmsPhone = '';
+    String initialWaPhone = '';
 
     if (widget.reminder != null) {
       final rem = widget.reminder!;
       _eventType = rem.eventType;
-      _reminderType = rem.reminderType;
+      _enableRingtone = rem.enableRingtone;
+      _enableSms = rem.enableSms;
+      _enableWhatsApp = rem.enableWhatsApp;
+      initialSmsPhone = rem.smsPhone;
+      initialWaPhone = rem.whatsappPhone;
       _sendOption = rem.sendOption;
       _notificationSound = rem.notificationSound;
       _repeatOption = rem.repeatOption;
@@ -92,9 +94,17 @@ class _ReminderFormState extends State<ReminderForm> {
         );
       } catch (_) {}
     } else {
-      // Set initial message template
+      _enableRingtone = true;
+      _enableSms = false;
+      _enableWhatsApp = false;
+      initialSmsPhone = provider.defaultCountryCode;
+      initialWaPhone = provider.defaultCountryCode;
       _updateMessageTemplate();
     }
+
+    _smsPhoneController = TextEditingController(text: initialSmsPhone);
+    _whatsappPhoneController = TextEditingController(text: initialWaPhone);
+    _msgController = TextEditingController(text: widget.reminder?.messageTemplate ?? '');
 
     _loadCustomTemplates(provider);
   }
@@ -103,7 +113,8 @@ class _ReminderFormState extends State<ReminderForm> {
   void dispose() {
     _titleTextController.dispose();
     _nameTextController.dispose();
-    _phoneController.dispose();
+    _smsPhoneController.dispose();
+    _whatsappPhoneController.dispose();
     _msgController.dispose();
     super.dispose();
   }
@@ -147,18 +158,37 @@ class _ReminderFormState extends State<ReminderForm> {
 
     final provider = Provider.of<ReminderProvider>(context, listen: false);
 
+    final List<String> types = [];
+    if (_enableRingtone) types.add('ringtone');
+    if (_enableSms) types.add('sms');
+    if (_enableWhatsApp) types.add('whatsapp');
+
+    if (types.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select at least one notification channel.'),
+          backgroundColor: AppTheme.danger,
+        ),
+      );
+      return;
+    }
+
+    final reminderType = types.join(',');
+
     // Format fields
     final dateStr = DateFormat('yyyy-MM-dd').format(_remindDate);
     final hourStr = _remindTime.hour.toString().padLeft(2, '0');
     final minStr = _remindTime.minute.toString().padLeft(2, '0');
     final timeStr = '$hourStr:$minStr';
 
-    final recipientName = _reminderType == 'notification' && _nameTextController.text.trim().isEmpty
+    final recipientName = _nameTextController.text.trim().isEmpty
         ? 'Me'
         : _nameTextController.text.trim();
-    final recipientPhone = _reminderType == 'notification' && _phoneController.text.trim().isEmpty
-        ? 'Self'
-        : _phoneController.text.trim();
+
+    final recipientPhone = jsonEncode({
+      'sms': _smsPhoneController.text.trim(),
+      'whatsapp': _whatsappPhoneController.text.trim()
+    });
 
     final reminderData = Reminder(
       id: widget.reminder?.id,
@@ -169,7 +199,7 @@ class _ReminderFormState extends State<ReminderForm> {
       remindDate: dateStr,
       remindTime: timeStr,
       messageTemplate: _msgController.text.trim(),
-      reminderType: _reminderType,
+      reminderType: reminderType,
       audioUrl: null,
       sendOption: _sendOption,
       status: widget.reminder?.status ?? 'scheduled',
@@ -284,41 +314,22 @@ class _ReminderFormState extends State<ReminderForm> {
               ),
               const SizedBox(height: 16),
 
-              // Name & Phone
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _nameTextController,
-                      decoration: const InputDecoration(
-                        labelText: 'Recipient Name',
-                        prefixIcon: Icon(Icons.person),
-                      ),
-                      onChanged: (_) {
-                        if (!isEdit) _updateMessageTemplate();
-                      },
-                      validator: (value) {
-                        if (_reminderType == 'notification') return null;
-                        return value == null || value.trim().isEmpty ? 'Name is required' : null;
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _phoneController,
-                      decoration: const InputDecoration(
-                        labelText: 'Phone Number',
-                        prefixIcon: Icon(Icons.phone),
-                        hintText: '+1234567890',
-                      ),
-                      validator: (value) {
-                        if (_reminderType == 'notification') return null;
-                        return value == null || value.trim().isEmpty ? 'Phone is required' : null;
-                      },
-                    ),
-                  ),
-                ],
+              // Name
+              TextFormField(
+                controller: _nameTextController,
+                decoration: const InputDecoration(
+                  labelText: 'Recipient Name',
+                  prefixIcon: Icon(Icons.person),
+                ),
+                onChanged: (_) {
+                  if (!isEdit) _updateMessageTemplate();
+                },
+                validator: (value) {
+                  if (_enableSms || _enableWhatsApp) {
+                    return value == null || value.trim().isEmpty ? 'Name is required' : null;
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 16),
 
@@ -463,9 +474,9 @@ class _ReminderFormState extends State<ReminderForm> {
               ),
               const SizedBox(height: 24),
 
-              // Reminder Type (SMS / WhatsApp / Call / Notification)
+              // Notification Channels
               Text(
-                'Reminder Method',
+                'Notification Channels',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 13,
@@ -473,61 +484,123 @@ class _ReminderFormState extends State<ReminderForm> {
                 ),
               ),
               const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? Colors.white.withOpacity(0.02)
-                      : Colors.black.withOpacity(0.01),
+              Card(
+                elevation: 0,
+                shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
+                  side: BorderSide(
                     color: Theme.of(context).brightness == Brightness.dark
                         ? const Color(0x11FFFFFF)
                         : const Color(0xFFE2E8F0),
                   ),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _buildMethodIcon('sms', Icons.sms_rounded, 'SMS'),
-                    _buildMethodIcon('whatsapp', Icons.chat_bubble_rounded, 'WhatsApp'),
-                    _buildMethodIcon('call', Icons.phone_rounded, 'Call'),
-                    _buildMethodIcon('notification', Icons.notifications_active_rounded, 'App Notification'),
-                  ],
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+                  child: Column(
+                    children: [
+                      SwitchListTile(
+                        activeColor: AppTheme.primary,
+                        title: const Text('Ringtone Sound Alert', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        subtitle: const Text('Plays looping alarm/ringtone sound on Android when reminder is due', style: TextStyle(fontSize: 11)),
+                        value: _enableRingtone,
+                        onChanged: (val) => setState(() => _enableRingtone = val),
+                      ),
+                      if (_enableRingtone) ...[
+                        const Divider(),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                          child: DropdownButtonFormField<String>(
+                            value: _notificationSound,
+                            decoration: const InputDecoration(
+                              labelText: 'Notification Sound Setting',
+                              prefixIcon: Icon(Icons.music_note),
+                            ),
+                            dropdownColor: Theme.of(context).colorScheme.surface,
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'default',
+                                child: Text('Default Notification Sound'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'ringtone',
+                                child: Text('Device Ringtone (Phone Ring)'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'alarm',
+                                child: Text('Device Alarm Sound'),
+                              ),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() {
+                                  _notificationSound = val;
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                      const Divider(),
+                      SwitchListTile(
+                        activeColor: AppTheme.primary,
+                        title: const Text('SMS Notification', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        subtitle: const Text('Sends background SMS on Android, opens SMS composer on iOS', style: TextStyle(fontSize: 11)),
+                        value: _enableSms,
+                        onChanged: (val) => setState(() => _enableSms = val),
+                      ),
+                      if (_enableSms) ...[
+                        const Divider(),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                          child: TextFormField(
+                            controller: _smsPhoneController,
+                            decoration: const InputDecoration(
+                              labelText: 'SMS Recipient Phone Number',
+                              prefixIcon: Icon(Icons.phone),
+                              hintText: '+919876543210',
+                            ),
+                            validator: (value) {
+                              if (_enableSms && (value == null || value.trim().isEmpty)) {
+                                return 'SMS phone number is required';
+                              }
+                              return null;
+                            },
+                          ),
+                        ),
+                      ],
+                      const Divider(),
+                      SwitchListTile(
+                        activeColor: AppTheme.primary,
+                        title: const Text('WhatsApp Notification', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        subtitle: const Text('Opens message template in WhatsApp pre-filled', style: TextStyle(fontSize: 11)),
+                        value: _enableWhatsApp,
+                        onChanged: (val) => setState(() => _enableWhatsApp = val),
+                      ),
+                      if (_enableWhatsApp) ...[
+                        const Divider(),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                          child: TextFormField(
+                            controller: _whatsappPhoneController,
+                            decoration: const InputDecoration(
+                              labelText: 'WhatsApp Recipient Phone Number',
+                              prefixIcon: Icon(Icons.chat_bubble_outline),
+                              hintText: '+919876543210',
+                            ),
+                            validator: (value) {
+                              if (_enableWhatsApp && (value == null || value.trim().isEmpty)) {
+                                return 'WhatsApp phone number is required';
+                              }
+                              return null;
+                            },
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
-
-              // Notification Sound setting
-              DropdownButtonFormField<String>(
-                value: _notificationSound,
-                decoration: const InputDecoration(
-                  labelText: 'Notification Sound Setting',
-                  prefixIcon: Icon(Icons.music_note),
-                ),
-                dropdownColor: Theme.of(context).colorScheme.surface,
-                items: const [
-                  DropdownMenuItem(
-                    value: 'default',
-                    child: Text('Default Notification Sound'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'ringtone',
-                    child: Text('Device Ringtone (Phone Ring)'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'alarm',
-                    child: Text('Device Alarm Sound'),
-                  ),
-                ],
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() {
-                      _notificationSound = val;
-                    });
-                  }
-                },
-              ),
               const SizedBox(height: 16),
 
               // Message Template Area
@@ -669,56 +742,5 @@ class _ReminderFormState extends State<ReminderForm> {
     );
   }
 
-  Widget _buildMethodIcon(String type, IconData icon, String label) {
-    final theme = Theme.of(context);
-    final isSelected = _reminderType == type;
-    final isDark = theme.brightness == Brightness.dark;
-    
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _reminderType = type;
-        });
-      },
-      borderRadius: BorderRadius.circular(12),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppTheme.primary.withOpacity(0.12)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected
-                ? AppTheme.primary
-                : Colors.transparent,
-            width: 1.5,
-          ),
-        ),
-        child: Column(
-          children: [
-            Icon(
-              icon,
-              color: isSelected
-                  ? AppTheme.primary
-                  : (isDark ? Colors.white54 : Colors.black54),
-              size: 24,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected
-                    ? (isDark ? Colors.white : AppTheme.primary)
-                    : (isDark ? Colors.white54 : Colors.black54),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+
 }

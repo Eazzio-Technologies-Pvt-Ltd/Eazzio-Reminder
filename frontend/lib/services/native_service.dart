@@ -78,4 +78,95 @@ class NativeService {
       return 'default';
     }
   }
+
+  static const MethodChannel _alarmChannel = MethodChannel('com.example.eazzio_reminder/alarm_system');
+
+  // Check if Exact Alarm permission is granted
+  static Future<bool> hasExactAlarmPermission() async {
+    try {
+      final bool hasPerm = await _alarmChannel.invokeMethod('checkExactAlarmPermission');
+      return hasPerm;
+    } catch (e) {
+      print('[NativeService] Error checking exact alarm permission: $e');
+      return true;
+    }
+  }
+
+  // Request Exact Alarm permission
+  static Future<void> requestExactAlarmPermission() async {
+    try {
+      await _alarmChannel.invokeMethod('requestExactAlarmPermission');
+    } catch (e) {
+      print('[NativeService] Error requesting exact alarm permission: $e');
+    }
+  }
+
+  // Open App OS Settings page
+  static Future<void> openSettings() async {
+    try {
+      await _alarmChannel.invokeMethod('openSettings');
+    } catch (e) {
+      print('[NativeService] Error opening settings: $e');
+    }
+  }
+
+  // Check if Battery Optimization is disabled / app is ignoring optimizations
+  static Future<bool> isIgnoringBatteryOptimizations() async {
+    try {
+      final bool isIgnoring = await _alarmChannel.invokeMethod('isIgnoringBatteryOptimizations');
+      return isIgnoring;
+    } catch (e) {
+      print('[NativeService] Error checking battery optimization status: $e');
+      return true;
+    }
+  }
+
+  // Request user to disable battery optimization for Eazzio Reminder
+  static Future<bool> requestDisableBatteryOptimization() async {
+    try {
+      final bool result = await _alarmChannel.invokeMethod('requestDisableBatteryOptimization');
+      return result;
+    } catch (e) {
+      print('[NativeService] Error requesting disable battery optimization: $e');
+      return false;
+    }
+  }
+
+  // Schedule alarm native call
+  static Future<void> scheduleAlarm({
+    required int id,
+    required String title,
+    required String note,
+    required int timeInMillis,
+    required String soundSetting,
+    required String reminderType,
+    required String phone,
+    required String message,
+  }) async {
+    try {
+      await _alarmChannel.invokeMethod('scheduleAlarm', {
+        'id': id,
+        'title': title,
+        'note': note,
+        'timeInMillis': timeInMillis,
+        'soundSetting': soundSetting,
+        'reminderType': reminderType,
+        'phone': phone,
+        'message': message,
+      });
+    } catch (e) {
+      print('[NativeService] Error scheduling native alarm: $e');
+    }
+  }
+
+  // Cancel alarm native call
+  static Future<void> cancelAlarm(int id) async {
+    try {
+      await _alarmChannel.invokeMethod('cancelAlarm', {
+        'id': id,
+      });
+    } catch (e) {
+      print('[NativeService] Error cancelling native alarm: $e');
+    }
+  }
 }

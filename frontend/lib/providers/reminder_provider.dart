@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/reminder.dart';
@@ -6,6 +7,7 @@ import '../services/api_service.dart';
 import '../services/socket_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_service.dart';
+import '../services/native_service.dart';
 
 class ReminderProvider extends ChangeNotifier {
   final LocalStorageService _localStorageService = LocalStorageService();
@@ -535,7 +537,7 @@ class ReminderProvider extends ChangeNotifier {
   Future<void> deleteReminder(int id) async {
     try {
       // Cancel native scheduled notification
-      await NotificationService().cancelNotification(id);
+      await _cancelLocalNotification(id);
       
       if (_appMode == 'local') {
         await _localStorageService.deleteReminder(id);
@@ -789,7 +791,7 @@ class ReminderProvider extends ChangeNotifier {
   void _scheduleLocalNotification(Reminder reminder) {
     if (reminder.id == null) return;
     if (reminder.status != 'scheduled') {
-      NotificationService().cancelNotification(reminder.id!);
+      _cancelLocalNotification(reminder.id!);
       return;
     }
 
@@ -804,16 +806,51 @@ class ReminderProvider extends ChangeNotifier {
         int.parse(timeParts[1]),
       );
 
-      NotificationService().scheduleNotification(
-        id: reminder.id!,
-        title: reminder.title,
-        body: 'Reminder for ${reminder.recipientName} is due. Tap to view details.',
-        scheduledDateTime: scheduledTime,
-        payload: reminder.id.toString(),
-        notificationSound: reminder.notificationSound,
-      );
+      final now = DateTime.now();
+      if (scheduledTime.isBefore(now)) {
+        debugPrint('[Notification Sync] Scheduled time $scheduledTime is in the past, skipping.');
+        return;
+      }
+
+      if (Platform.isAndroid) {
+        final timeInMillis = scheduledTime.millisecondsSinceEpoch;
+        NativeService.scheduleAlarm(
+          id: reminder.id!,
+          title: reminder.title,
+          note: reminder.messageTemplate.isNotEmpty 
+              ? reminder.messageTemplate 
+              : 'Reminder for ${reminder.recipientName} is due.',
+          timeInMillis: timeInMillis,
+          soundSetting: reminder.notificationSound,
+          reminderType: reminder.reminderType,
+          phone: reminder.smsPhone.isNotEmpty ? reminder.smsPhone : reminder.recipientPhone,
+          message: reminder.messageTemplate,
+        );
+        debugPrint('[Notification Sync] Scheduled native Android exact alarm ID ${reminder.id} for $scheduledTime');
+      } else {
+        NotificationService().scheduleNotification(
+          id: reminder.id!,
+          title: reminder.title,
+          body: 'Reminder for ${reminder.recipientName} is due. Tap to view details.',
+          scheduledDateTime: scheduledTime,
+          payload: reminder.id.toString(),
+          notificationSound: reminder.notificationSound,
+        );
+        debugPrint('[Notification Sync] Scheduled iOS notification ID ${reminder.id} for $scheduledTime');
+      }
     } catch (e) {
       print('[Notification Sync] Failed to parse schedule time: $e');
+    }
+  }
+
+  Future<void> _cancelLocalNotification(int id) async {
+    try {
+      if (Platform.isAndroid) {
+        await NativeService.cancelAlarm(id);
+      }
+      await NotificationService().cancelNotification(id);
+    } catch (e) {
+      print('[ReminderProvider] Error cancelling notification: $e');
     }
   }
 
@@ -822,7 +859,7 @@ class ReminderProvider extends ChangeNotifier {
       if (r.status == 'scheduled') {
         _scheduleLocalNotification(r);
       } else {
-        NotificationService().cancelNotification(r.id!);
+        _cancelLocalNotification(r.id!);
       }
     }
   }
@@ -848,7 +885,7 @@ class ReminderProvider extends ChangeNotifier {
       );
 
       // Cancel the current notification to prevent duplication
-      await NotificationService().cancelNotification(id);
+      await _cancelLocalNotification(id);
 
       await updateReminder(snoozedReminder);
     } catch (e) {

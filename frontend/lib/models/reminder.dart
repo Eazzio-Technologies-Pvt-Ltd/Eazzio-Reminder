@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class Reminder {
   final int? id;
   final String title;
@@ -7,7 +9,7 @@ class Reminder {
   final String remindDate; // 'YYYY-MM-DD'
   final String remindTime; // 'HH:MM'
   final String messageTemplate;
-  final String reminderType; // 'call', 'sms', 'notification', 'whatsapp'
+  final String reminderType; // 'call', 'sms', 'notification', 'whatsapp' (or comma-separated e.g. 'ringtone,sms,whatsapp')
   final String? audioUrl;
   final String sendOption; // 'auto', 'approval'
   final String status; // 'scheduled', 'pending_approval', 'sending', 'sent', 'failed', 'rejected', 'paused'
@@ -17,6 +19,30 @@ class Reminder {
   final int? assignedBy;
   final String repeatOption; // 'none', 'daily', 'weekly', 'monthly', 'yearly'
   final String? createdAt;
+
+  bool get enableRingtone => reminderType.contains('ringtone') || reminderType == 'notification' || reminderType == 'call';
+  bool get enableSms => reminderType.contains('sms');
+  bool get enableWhatsApp => reminderType.contains('whatsapp');
+
+  String get smsPhone {
+    if (recipientPhone.startsWith('{') && recipientPhone.endsWith('}')) {
+      try {
+        final data = jsonDecode(recipientPhone);
+        return data['sms']?.toString() ?? '';
+      } catch (_) {}
+    }
+    return recipientPhone;
+  }
+
+  String get whatsappPhone {
+    if (recipientPhone.startsWith('{') && recipientPhone.endsWith('}')) {
+      try {
+        final data = jsonDecode(recipientPhone);
+        return data['whatsapp']?.toString() ?? '';
+      } catch (_) {}
+    }
+    return recipientPhone;
+  }
 
   Reminder({
     this.id,

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/reminder.dart';
@@ -227,73 +228,48 @@ class LocalStorageService {
 
   // Device Direct Dispatcher
   Future<Map<String, dynamic>> sendReminder(Reminder reminder) async {
-    final phone = reminder.recipientPhone;
+    final smsPhoneNum = reminder.smsPhone;
+    final waPhoneNum = reminder.whatsappPhone;
     final message = reminder.messageTemplate;
 
     try {
       bool launched = false;
       String details = '';
 
-      if (reminder.reminderType == 'notification') {
-        launched = true;
-        details = 'Dispatched system notification successfully (Notification Only)';
-      } else if (reminder.reminderType == 'sms') {
-        // Send via SIM SMS
-        final bool hasPermission = await NativeService.hasSmsPermission();
-        if (hasPermission) {
-          final bool success = await NativeService.sendDirectSMS(phone, message);
-          if (success) {
-            launched = true;
-            details = 'Automatically sent background SMS directly to $phone';
-          }
-        }
-
-        if (!launched) {
-          final String encodedMsg = Uri.encodeComponent(message);
-          final Uri smsUri = Uri.parse('sms:$phone?body=$encodedMsg');
-          
-          try {
-            launched = await launchUrl(smsUri);
-          } catch (e) {
-            print('[LocalStorageService] Launch SMS failed, trying fallback: $e');
-          }
-
-          if (!launched) {
-            if (await canLaunchUrl(smsUri)) {
-              launched = await launchUrl(smsUri);
+      // 1. Process SMS if enabled
+      if (reminder.enableSms) {
+        bool smsSent = false;
+        if (Platform.isAndroid) {
+          final bool hasPermission = await NativeService.hasSmsPermission();
+          if (hasPermission) {
+            final bool success = await NativeService.sendDirectSMS(smsPhoneNum, message);
+            if (success) {
+              smsSent = true;
+              launched = true;
+              details += 'Automatically sent background SMS directly to $smsPhoneNum. ';
             }
           }
-
-          if (!launched) {
-            throw Exception('Could not launch SMS app intent');
-          }
-
-          details = 'Launched Device SMS (SIM) to $phone';
         }
-      } else if (reminder.reminderType == 'call') {
-        // Direct Phone Call
-        final Uri callUri = Uri.parse('tel:$phone');
-        try {
-          launched = await launchUrl(callUri);
-        } catch (e) {
-          print('[LocalStorageService] Launch Call failed, trying fallback: $e');
-        }
-
-        if (!launched) {
-          if (await canLaunchUrl(callUri)) {
-            launched = await launchUrl(callUri);
+        
+        if (!smsSent) {
+          // iOS or Android without permission: fallback to composer
+          final String encodedMsg = Uri.encodeComponent(message);
+          final Uri smsUri = Uri.parse('sms:$smsPhoneNum?body=$encodedMsg');
+          try {
+            final ok = await launchUrl(smsUri);
+            if (ok) {
+              launched = true;
+              details += 'Opened pre-filled SMS composer to $smsPhoneNum. ';
+            }
+          } catch (e) {
+            print('[LocalStorageService] Launch SMS failed: $e');
           }
         }
+      }
 
-        if (!launched) {
-          throw Exception('Could not launch Dialer app intent');
-        }
-
-        details = 'Launched direct phone call to $phone';
-      } else {
-        // Send via WhatsApp
-        // Clean phone number (keep only digits)
-        final cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
+      // 2. Process WhatsApp if enabled
+      if (reminder.enableWhatsApp) {
+        final cleanPhone = waPhoneNum.replaceAll(RegExp(r'[^\d]'), '');
         final String encodedMsg = Uri.encodeComponent(message);
         final Uri waUri = Uri.parse('https://wa.me/$cleanPhone?text=$encodedMsg');
         
@@ -303,26 +279,28 @@ class LocalStorageService {
         }
 
         try {
-          launched = await launchUrl(waUri, mode: LaunchMode.externalApplication);
-        } catch (e) {
-          print('[LocalStorageService] Launch WhatsApp failed, trying fallback: $e');
-        }
-
-        if (!launched) {
-          if (await canLaunchUrl(waUri)) {
-            launched = await launchUrl(waUri, mode: LaunchMode.externalApplication);
+          final waLaunched = await launchUrl(waUri, mode: LaunchMode.externalApplication);
+          if (waLaunched) {
+            launched = true;
+            if (accEnabled) {
+              details += 'Automatically sent WhatsApp (via Accessibility Auto-Click) to $waPhoneNum. ';
+            } else {
+              details += 'Opened WhatsApp chat to $waPhoneNum. ';
+            }
           }
+        } catch (e) {
+          print('[LocalStorageService] Launch WhatsApp failed: $e');
         }
+      }
 
-        if (!launched) {
-          throw Exception('Could not launch WhatsApp intent');
-        }
+      // 3. Fallback / Ringtone-only logs
+      if (!reminder.enableSms && !reminder.enableWhatsApp) {
+        launched = true;
+        details = 'Dispatched system notification/ringtone alert successfully';
+      }
 
-        if (accEnabled) {
-          details = 'Automatically sent WhatsApp (via Accessibility Auto-Click) to $phone';
-        } else {
-          details = 'Launched WhatsApp Chat to $phone';
-        }
+      if (!launched) {
+        throw Exception('Could not dispatch reminder channels');
       }
 
       // Update status to sent and write to logs
@@ -342,30 +320,17 @@ class LocalStorageService {
       ));
 
       // Show confirmation notification in the notification bar
-      if (reminder.reminderType != 'notification') {
-        String notifTitle = '';
-        String notifBody = '';
-        if (reminder.reminderType == 'sms') {
-          notifTitle = 'SMS Dispatched';
-          notifBody = 'SMS to ${reminder.recipientName} (${reminder.recipientPhone}) has been launched.';
-        } else if (reminder.reminderType == 'call') {
-          notifTitle = 'Call Initiated';
-          notifBody = 'Call to ${reminder.recipientName} (${reminder.recipientPhone}) has been started.';
-        } else if (reminder.reminderType == 'whatsapp') {
-          notifTitle = 'WhatsApp Dispatched';
-          notifBody = 'WhatsApp message to ${reminder.recipientName} has been opened.';
-        }
-
-        try {
-          await NotificationService().showImmediateNotification(
-            id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
-            title: notifTitle,
-            body: notifBody,
-            notificationSound: reminder.notificationSound,
-          );
-        } catch (ne) {
-          print('[LocalStorageService] Failed to show dispatch notification: $ne');
-        }
+      String notifTitle = 'Reminder Dispatched';
+      String notifBody = 'Reminder details have been processed successfully.';
+      try {
+        await NotificationService().showImmediateNotification(
+          id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
+          title: notifTitle,
+          body: notifBody,
+          notificationSound: reminder.notificationSound,
+        );
+      } catch (ne) {
+        print('[LocalStorageService] Failed to show dispatch notification: $ne');
       }
 
       return {'success': true, 'details': details};
@@ -389,7 +354,7 @@ class LocalStorageService {
         await NotificationService().showImmediateNotification(
           id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
           title: 'Dispatch Failed',
-          body: 'Failed to send ${reminder.reminderType.toUpperCase()} reminder to ${reminder.recipientName}.',
+          body: 'Failed to send reminder for ${reminder.recipientName}.',
           notificationSound: reminder.notificationSound,
         );
       } catch (ne) {

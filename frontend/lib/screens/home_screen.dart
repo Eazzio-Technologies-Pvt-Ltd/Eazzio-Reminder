@@ -3,8 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/reminder_provider.dart';
 import '../models/reminder.dart';
+import '../services/native_service.dart';
 import '../theme.dart';
-import '../widgets/custom_graphics.dart';
 import '../widgets/reminder_form.dart';
 import '../widgets/approval_list.dart';
 import 'history_screen.dart';
@@ -22,16 +22,27 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   late PageController _pageController;
+  bool _isIgnoringBatteryOpt = true;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: _currentIndex);
+    _checkBatteryOptimization();
     // Register the auto-dispatch callback once the frame is built
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = Provider.of<ReminderProvider>(context, listen: false);
       provider.onAutoReminderDue = _handleAutoReminderDue;
     });
+  }
+
+  Future<void> _checkBatteryOptimization() async {
+    final isIgnoring = await NativeService.isIgnoringBatteryOptimizations();
+    if (mounted) {
+      setState(() {
+        _isIgnoringBatteryOpt = isIgnoring;
+      });
+    }
   }
 
   @override
@@ -637,6 +648,60 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (!_isIgnoringBatteryOpt) ...[
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 20),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.amber.withOpacity(0.4), width: 1.5),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 28),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Battery Saver Protection Active',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Exact reminders may be delayed by OEM battery optimization. Tap to disable.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isDark ? AppTheme.textSecondary : Colors.black87,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: () async {
+                            await NativeService.requestDisableBatteryOptimization();
+                            _checkBatteryOptimization();
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.amber,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            elevation: 0,
+                          ),
+                          child: const Text('Fix Now', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 // Summary Overview cards
                 Row(
                   children: [

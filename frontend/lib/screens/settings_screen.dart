@@ -35,6 +35,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   
   bool _smsPermission = false;
   bool _accessibilityEnabled = false;
+  bool _exactAlarmPermission = false;
 
   @override
   void initState() {
@@ -97,11 +98,40 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   Future<void> _checkNativePermissions() async {
     final sms = await NativeService.hasSmsPermission();
     final acc = await NativeService.isAccessibilityServiceEnabled();
+    final exact = await NativeService.hasExactAlarmPermission();
     if (mounted) {
       setState(() {
         _smsPermission = sms;
         _accessibilityEnabled = acc;
+        _exactAlarmPermission = exact;
       });
+    }
+  }
+
+  Future<void> _requestSmsWithExplanation() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('SMS Permission Required'),
+        content: const Text(
+          'Allow SMS access to notify your reminder contacts automatically from the background when a reminder triggers.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Proceed'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final granted = await NativeService.requestSmsPermission();
+      setState(() => _smsPermission = granted);
     }
   }
 
@@ -317,6 +347,30 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                       children: [
                         ListTile(
                           leading: Icon(
+                            _exactAlarmPermission ? Icons.check_circle : Icons.error_outline,
+                            color: _exactAlarmPermission ? AppTheme.success : AppTheme.warning,
+                            size: 28,
+                          ),
+                          title: const Text('Exact Alarms', style: TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Text(
+                            _exactAlarmPermission
+                                ? 'Permission Granted: Reminders fire exactly on scheduled time.'
+                                : 'Permission Denied: Delayed triggers possible. Alarms will use inexact intervals.',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          trailing: !_exactAlarmPermission
+                              ? ElevatedButton(
+                                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), minimumSize: Size.zero),
+                                  onPressed: () async {
+                                    await NativeService.requestExactAlarmPermission();
+                                  },
+                                  child: const Text('Enable'),
+                                )
+                              : null,
+                        ),
+                        const Divider(),
+                        ListTile(
+                          leading: Icon(
                             _smsPermission ? Icons.check_circle : Icons.error_outline,
                             color: _smsPermission ? AppTheme.success : AppTheme.warning,
                             size: 28,
@@ -331,10 +385,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                           trailing: !_smsPermission
                               ? ElevatedButton(
                                   style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), minimumSize: Size.zero),
-                                  onPressed: () async {
-                                    final granted = await NativeService.requestSmsPermission();
-                                    setState(() => _smsPermission = granted);
-                                  },
+                                  onPressed: _requestSmsWithExplanation,
                                   child: const Text('Grant'),
                                 )
                               : null,
@@ -363,6 +414,21 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                                 )
                               : null,
                         ),
+                        if (Theme.of(context).platform == TargetPlatform.iOS) ...[
+                          const Divider(),
+                          const ListTile(
+                            leading: Icon(
+                              Icons.warning_amber_rounded,
+                              color: AppTheme.warning,
+                              size: 28,
+                            ),
+                            title: Text('iOS Notification Limitations', style: TextStyle(fontWeight: FontWeight.bold)),
+                            subtitle: Text(
+                              'iOS restricts looping alarm sounds in the background. Tap standard local alerts to see reminder details.',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
