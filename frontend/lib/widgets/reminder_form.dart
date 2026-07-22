@@ -99,12 +99,15 @@ class _ReminderFormState extends State<ReminderForm> {
       _enableWhatsApp = false;
       initialSmsPhone = provider.defaultCountryCode;
       initialWaPhone = provider.defaultCountryCode;
-      _updateMessageTemplate();
     }
 
     _smsPhoneController = TextEditingController(text: initialSmsPhone);
     _whatsappPhoneController = TextEditingController(text: initialWaPhone);
     _msgController = TextEditingController(text: widget.reminder?.messageTemplate ?? '');
+
+    if (widget.reminder == null) {
+      _updateMessageTemplate();
+    }
 
     _loadCustomTemplates(provider);
   }

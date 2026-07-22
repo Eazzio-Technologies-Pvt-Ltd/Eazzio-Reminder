@@ -672,7 +672,7 @@ app.get('/api/teams/members', async (req, res) => {
        JOIN users u1 ON tr.sender_id = u1.id
        JOIN users u2 ON tr.receiver_id = u2.id
        WHERE (tr.sender_id = ? OR tr.receiver_id = ?) AND tr.status = 'accepted'`,
-      [userId, userId, userId, userId, userId, userId, userId, userId]
+      [userId, userId, userId, userId, userId, userId]
     );
 
     res.json(members);
