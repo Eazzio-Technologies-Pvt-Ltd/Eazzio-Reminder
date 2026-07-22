@@ -180,6 +180,11 @@ class LocalStorageService {
   }
 
   // Logs Local CR
+  Future<void> clearHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(keyLogs);
+  }
+
   Future<List<ReminderLog>> getHistory() async {
     final prefs = await SharedPreferences.getInstance();
     final List<String> logsJson = prefs.getStringList(keyLogs) ?? [];

@@ -709,8 +709,8 @@ app.post('/api/approvals/:id/approve', async (req, res) => {
     
     // Log details
     await dbQuery.run(
-      'INSERT INTO logs (reminder_id, recipient_name, recipient_phone, reminder_type, event_type, status, details) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, reminder.recipient_name, reminder.recipient_phone, reminder.reminder_type, reminder.event_type, finalStatus, logDetails]
+      'INSERT INTO logs (reminder_id, user_id, recipient_name, recipient_phone, reminder_type, event_type, status, details) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, reminder.user_id, reminder.recipient_name, reminder.recipient_phone, reminder.reminder_type, reminder.event_type, finalStatus, logDetails]
     );
 
     io.emit('reminder_updated', { id: parseInt(id), status: finalStatus });
@@ -736,8 +736,8 @@ app.post('/api/approvals/:id/reject', async (req, res) => {
     
     // Log rejection
     await dbQuery.run(
-      'INSERT INTO logs (reminder_id, recipient_name, recipient_phone, reminder_type, event_type, status, details) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, reminder.recipient_name, reminder.recipient_phone, reminder.reminder_type, reminder.event_type, 'rejected', 'Rejected by user approval workflow']
+      'INSERT INTO logs (reminder_id, user_id, recipient_name, recipient_phone, reminder_type, event_type, status, details) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, reminder.user_id, reminder.recipient_name, reminder.recipient_phone, reminder.reminder_type, reminder.event_type, 'rejected', 'Rejected by user approval workflow']
     );
 
     io.emit('reminder_updated', { id: parseInt(id), status: 'rejected' });
@@ -751,9 +751,31 @@ app.post('/api/approvals/:id/reject', async (req, res) => {
 
 // 8. Get communication logs (history)
 app.get('/api/history', async (req, res) => {
+  const { userId } = req.query;
   try {
-    const logs = await dbQuery.all('SELECT * FROM logs ORDER BY sent_at DESC');
+    let logs;
+    if (userId) {
+      logs = await dbQuery.all('SELECT * FROM logs WHERE user_id = ? ORDER BY sent_at DESC', [userId]);
+    } else {
+      logs = await dbQuery.all('SELECT * FROM logs ORDER BY sent_at DESC');
+    }
     res.json(logs.map(formatLog));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 8.5 Clear communication logs (history)
+app.delete('/api/history', async (req, res) => {
+  const { userId } = req.query;
+  try {
+    if (userId) {
+      await dbQuery.run('DELETE FROM logs WHERE user_id = ?', [userId]);
+    } else {
+      await dbQuery.run('DELETE FROM logs');
+    }
+    io.emit('logs_updated');
+    res.json({ message: 'History logs cleared successfully', success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

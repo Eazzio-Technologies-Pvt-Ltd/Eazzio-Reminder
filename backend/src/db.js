@@ -106,6 +106,7 @@ async function initializePostgresTables() {
       CREATE TABLE IF NOT EXISTS logs (
         id SERIAL PRIMARY KEY,
         reminder_id INTEGER REFERENCES reminders(id) ON DELETE SET NULL,
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
         recipient_name TEXT NOT NULL,
         recipient_phone TEXT NOT NULL,
         reminder_type TEXT NOT NULL,
@@ -114,6 +115,10 @@ async function initializePostgresTables() {
         details TEXT,
         sent_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )
+    `);
+
+    await pgPool.query(`
+      ALTER TABLE logs ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
     `);
 
     // 5. OTP Verification table
@@ -244,6 +249,7 @@ function initializeSqliteTables() {
       CREATE TABLE IF NOT EXISTS logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         reminder_id INTEGER,
+        user_id INTEGER,
         recipient_name TEXT NOT NULL,
         recipient_phone TEXT NOT NULL,
         reminder_type TEXT NOT NULL, -- 'call', 'sms'
@@ -251,9 +257,16 @@ function initializeSqliteTables() {
         status TEXT NOT NULL, -- 'sent', 'failed', 'rejected'
         details TEXT,
         sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(reminder_id) REFERENCES reminders(id) ON DELETE SET NULL
+        FOREIGN KEY(reminder_id) REFERENCES reminders(id) ON DELETE SET NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
       )
     `);
+
+    sqliteDb.run("ALTER TABLE logs ADD COLUMN user_id INTEGER", (err) => {
+      if (err && !err.message.includes('duplicate column name')) {
+        console.error('Migration error adding user_id to logs:', err.message);
+      }
+    });
 
     // 5. OTP Verification table
     sqliteDb.run(`

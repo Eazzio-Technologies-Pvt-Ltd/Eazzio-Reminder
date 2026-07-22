@@ -88,13 +88,27 @@ class ApiService {
   }
 
   // Fetch history logs
-  Future<List<ReminderLog>> getHistory() async {
-    final response = await http.get(Uri.parse('$baseUrl/history'));
+  Future<List<ReminderLog>> getHistory({int? userId}) async {
+    final uri = userId != null
+        ? Uri.parse('$baseUrl/history?userId=$userId')
+        : Uri.parse('$baseUrl/history');
+    final response = await http.get(uri);
     if (response.statusCode == 200) {
       final List<dynamic> body = jsonDecode(response.body);
       return body.map((json) => ReminderLog.fromJson(json)).toList();
     } else {
       throw Exception('Failed to load history logs: ${response.body}');
+    }
+  }
+
+  // Clear history logs
+  Future<void> clearHistory({int? userId}) async {
+    final uri = userId != null
+        ? Uri.parse('$baseUrl/history?userId=$userId')
+        : Uri.parse('$baseUrl/history');
+    final response = await http.delete(uri);
+    if (response.statusCode != 200) {
+      throw Exception('Failed to clear history: ${response.body}');
     }
   }
 

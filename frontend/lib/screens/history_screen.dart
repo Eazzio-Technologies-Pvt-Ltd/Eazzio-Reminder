@@ -44,6 +44,44 @@ class _HistoryScreenState extends State<HistoryScreen> {
     });
   }
 
+  void _confirmClearHistory(BuildContext context, ReminderProvider provider) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear Outbox History?'),
+        content: const Text(
+          'Are you sure you want to permanently clear all records from your outbox logs? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              provider.clearHistory().catchError((err) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to clear outbox: $err'),
+                      backgroundColor: AppTheme.danger,
+                    ),
+                  );
+                }
+              });
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.danger,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Clear All'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<ReminderProvider>(context);
@@ -109,27 +147,45 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: const BoxDecoration(
-                                color: AppTheme.primary,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
                             Expanded(
-                              child: Text(
-                                'Outbox & Logs Audit',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: isDark ? Colors.white70 : AppTheme.textSecondaryLightMode,
-                                ),
-                                overflow: TextOverflow.ellipsis,
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: const BoxDecoration(
+                                      color: AppTheme.primary,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      'Outbox & Logs Audit',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark ? Colors.white70 : AppTheme.textSecondaryLightMode,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
+                            if (provider.history.isNotEmpty)
+                              TextButton.icon(
+                                onPressed: () => _confirmClearHistory(context, provider),
+                                icon: const Icon(Icons.delete_sweep_outlined, size: 16, color: AppTheme.danger),
+                                label: const Text('Clear All', style: TextStyle(color: AppTheme.danger, fontSize: 13, fontWeight: FontWeight.bold)),
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                              ),
                           ],
                         ),
                         const SizedBox(height: 4),

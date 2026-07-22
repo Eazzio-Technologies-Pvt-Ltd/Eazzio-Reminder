@@ -75,8 +75,8 @@ class ReminderProvider extends ChangeNotifier {
     notifyListeners();
 
     // 1. Load settings from Local Storage
-    _appMode = 'server'; // Always in server mode
-    _apiBaseUrl = 'https://eazzio-reminder.onrender.com/api';
+    _appMode = await _localStorageService.getAppMode();
+    _apiBaseUrl = await _localStorageService.getApiBaseUrl();
     _themeModeStr = await _localStorageService.getThemeMode();
     _defaultCountryCode = await _localStorageService.getDefaultCountryCode();
 
@@ -457,11 +457,33 @@ class ReminderProvider extends ChangeNotifier {
       if (_appMode == 'local') {
         _history = await _localStorageService.getHistory();
       } else {
-        _history = await _apiService.getHistory();
+        _history = await _apiService.getHistory(userId: _currentUserId);
       }
       notifyListeners();
     } catch (e) {
       print('Error fetching history: $e');
+    }
+  }
+
+  // Clear all outbox logs
+  Future<void> clearHistory() async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      if (_appMode == 'local') {
+        await _localStorageService.clearHistory();
+        _history = [];
+      } else {
+        await _apiService.clearHistory(userId: _currentUserId);
+        _history = [];
+      }
+      notifyListeners();
+    } catch (e) {
+      print('Error clearing history: $e');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
